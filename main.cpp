@@ -7,9 +7,32 @@
 #include <avogadro/qtopengl/glwidget.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/bind.h>
+#ifdef AVOGADRO_WASM_BROWSER_TESTS
+#include <emscripten/emscripten.h>
+#include <avogadro/core/atom.h>
+#include <avogadro/qtgui/molecule.h>
+#endif
 
 namespace {
 Avogadro::Web::WebController* controller = nullptr;
+#ifdef AVOGADRO_WASM_BROWSER_TESTS
+Avogadro::QtOpenGL::GLWidget* viewport = nullptr;
+
+void updateViewport()
+{
+  viewport->update();
+}
+emscripten::val atomPosition(unsigned int index)
+{
+  auto& camera = viewport->renderer().camera();
+  const auto point = camera.project(
+    controller->molecule().atom(index).position3d().cast<float>());
+  auto result = emscripten::val::object();
+  result.set("x", point.x());
+  result.set("y", camera.height() - point.y());
+  return result;
+}
+#endif
 std::string json(const QJsonObject& object)
 {
   return QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString();
@@ -21,6 +44,29 @@ std::string state()
 bool setTool(std::string name)
 {
   return controller->setTool(QString::fromStdString(name));
+}
+bool setDisplayStyle(std::string id, bool enabled)
+{
+  return controller->setDisplayStyle(QString::fromStdString(id), enabled);
+}
+bool alignPickedAtoms(std::string axis)
+{
+  return controller->alignPickedAtoms(QString::fromStdString(axis));
+}
+bool setPickedLabel(std::string label)
+{
+  return controller->setPickedLabel(QString::fromStdString(label));
+}
+bool calculate(std::string command, std::string options)
+{
+  const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
+  return doc.isObject() &&
+         controller->calculate(QString::fromStdString(command),
+                               doc.object().toVariantMap());
+}
+bool setAutoOptimize(bool enabled, std::string method)
+{
+  return controller->setAutoOptimize(enabled, QString::fromStdString(method));
 }
 bool setDrawOptions(std::string options)
 {
@@ -68,8 +114,17 @@ void markSaved()
 }
 EMSCRIPTEN_BINDINGS(avogadro_web)
 {
+#ifdef AVOGADRO_WASM_BROWSER_TESTS
+  emscripten::function("updateViewportForTest", &updateViewport);
+  emscripten::function("atomPositionForTest", &atomPosition);
+#endif
   emscripten::function("editorState", &state);
   emscripten::function("setTool", &setTool);
+  emscripten::function("setDisplayStyle", &setDisplayStyle);
+  emscripten::function("alignPickedAtoms", &alignPickedAtoms);
+  emscripten::function("setPickedLabel", &setPickedLabel);
+  emscripten::function("calculate", &calculate);
+  emscripten::function("setAutoOptimize", &setAutoOptimize);
   emscripten::function("setDrawOptions", &setDrawOptions);
   emscripten::function("loadMolecule", &load);
   emscripten::function("exportMolecule", &save);
@@ -103,6 +158,13 @@ int main(int argc, char** argv)
   Avogadro::Web::WebController editor(view);
 #ifdef __EMSCRIPTEN__
   controller = &editor;
+#ifdef AVOGADRO_WASM_BROWSER_TESTS
+  viewport = &view;
+  EM_ASM({
+    globalThis.updateAvogadroViewportForTest = Module.updateViewportForTest;
+    globalThis.avogadroAtomPositionForTest = Module.atomPositionForTest;
+  });
+#endif
   // Qt stays on the browser main thread; callbacks run after each completed
   // event, avoiding re-entry into a partially updated molecule or undo stack.
   QObject::connect(

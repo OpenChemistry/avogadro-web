@@ -13,20 +13,49 @@
       <fieldset id="controls" disabled>
         <legend>Molecule</legend>
         <div class="row"><button id="new">New</button><button id="open">Open…</button></div>
-        <input type="file" id="file" accept=".cjson,.mol,.sdf,.xyz" hidden>
+        <input type="file" id="file" accept=".cjson,.mol,.sdf,.xyz,.fchk,.molden,.cube" hidden>
         <label>Download format<select id="format"><option value="cjson">CJSON</option><option value="mol">MOL</option><option value="sdf">SDF</option><option value="xyz">XYZ</option></select></label>
         <button id="download">Download</button>
         <hr>
-        <div class="tools" role="group" aria-label="Tools">
-          <button data-tool="navigate" aria-pressed="false">Navigate</button>
-          <button data-tool="draw" aria-pressed="true">Draw</button>
-          <button data-tool="select" aria-pressed="false">Select</button>
-        </div>
+        <div id="tools" class="tools" role="group" aria-label="Tools"></div>
         <section id="draw-options" aria-label="Draw options">
           <label>Element<select id="element"></select></label>
           <label>Bond<select id="bond"><option value="0">Automatic</option><option value="1">Single</option><option value="2">Double</option><option value="3">Triple</option></select></label>
           <label class="check"><input type="checkbox" id="hydrogens" checked>Adjust hydrogens</label>
         </section>
+        <section id="align-options" aria-label="Align options" hidden>
+          <label>Axis<select id="align-axis"><option>x</option><option>y</option><option>z</option></select></label>
+          <button id="align">Align picked atoms</button>
+        </section>
+        <form id="label-options" aria-label="Edit atom label" hidden>
+          <label>Atom label<input id="atom-label" type="text" autocomplete="off"></label>
+          <button type="submit">Apply label</button>
+        </form>
+        <section id="auto-opt-options" aria-label="AutoOptimize" hidden>
+          <label>Force field<select id="auto-opt-method"><option value="UFF">UFF</option><option value="LJ">Lennard-Jones</option></select></label>
+          <button id="auto-opt">Start AutoOptimize</button>
+        </section>
+        <details id="calculations" hidden>
+          <summary>Calculations</summary>
+          <label id="force-field-label">Force field<select id="force-field"><option value="UFF">UFF</option><option value="LJ">Lennard-Jones</option></select></label>
+          <button id="optimize">Optimize Geometry</button>
+          <label id="surface-label">Surface<select id="surface-type">
+            <option value="renderVDW">Van der Waals</option>
+            <option value="renderSolventAccessible">Solvent accessible</option>
+            <option value="renderSolventExcluded">Solvent excluded</option>
+            <option value="renderOrbital">Molecular orbital</option>
+            <option value="renderElectronDensity">Electron density</option>
+            <option value="renderCube">Imported cube</option>
+          </select></label>
+          <label id="orbital-label" hidden>Orbital<select id="orbital"></select></label>
+          <button id="render-surface">Render surface</button>
+          <p id="calculation-status" role="status"></p>
+        </details>
+        <p id="tool-help" hidden></p>
+        <details>
+          <summary>Display styles</summary>
+          <div id="display-styles"></div>
+        </details>
         <div class="row"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button></div>
         <button id="delete">Delete selected atoms</button>
         <button id="reset">Fit molecule</button>
