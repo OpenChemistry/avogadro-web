@@ -19,6 +19,12 @@ export class AvogadroEditor extends EventTarget {
   setPickedLabel(label) {
     if (!this.instance.setPickedLabel(label)) throw new Error('Pick an atom to label.');
   }
+  calculate(command, options = {}) {
+    if (!this.instance.calculate(command, JSON.stringify(options))) throw new Error('Calculation unavailable.');
+  }
+  setAutoOptimize(enabled, method) {
+    if (!this.instance.setAutoOptimize(enabled, method)) throw new Error('Choose a force field compatible with this molecule.');
+  }
   setDrawOptions(options) {
     if (!this.instance.setDrawOptions(JSON.stringify(options))) throw new Error('Invalid draw options.');
   }
@@ -75,11 +81,56 @@ function setupPlugins(state) {
   }
 }
 
+function renderCalculations(state) {
+  const working = state.calculating || state.autoOptimizing;
+  $('calculations').hidden = !state.canOptimize && !state.canRenderSurfaces;
+  $('force-field-label').hidden = !state.canOptimize;
+  $('optimize').hidden = !state.canOptimize;
+  $('surface-label').hidden = !state.canRenderSurfaces;
+  $('render-surface').hidden = !state.canRenderSurfaces;
+  $('auto-opt-options').hidden = state.tool !== 'AutoOpt';
+  $('auto-opt').textContent = state.autoOptimizing ? 'Stop AutoOptimize' : 'Start AutoOptimize';
+  $('auto-opt-method').disabled = working;
+  $('auto-opt').disabled = state.calculating || state.atomCount === 0;
+  $('optimize').disabled = working || state.atomCount === 0;
+  $('render-surface').disabled = working || state.atomCount === 0;
+  $('force-field').disabled = working;
+  $('surface-type').disabled = working;
+  $('orbital').disabled = working;
+  $('viewport').inert = state.calculating;
+  for (const id of ['new', 'open', 'download', 'delete']) $(id).disabled = working;
+  for (const button of $('tools').querySelectorAll('button')) button.disabled = working;
+  $('undo').disabled ||= working;
+  $('redo').disabled ||= working;
+  $('calculation-status').textContent = state.calculationMessage;
+  $('calculation-status').dataset.error = String(state.calculationError);
+
+  const type = $('surface-type');
+  type.querySelector('[value="renderOrbital"]').disabled = !state.orbitalCount;
+  type.querySelector('[value="renderElectronDensity"]').disabled = !state.orbitalCount;
+  type.querySelector('[value="renderCube"]').disabled = !state.cubeCount;
+  if (type.selectedOptions[0]?.disabled) type.value = 'renderVDW';
+  $('orbital-label').hidden = type.value !== 'renderOrbital';
+
+  const orbital = $('orbital');
+  const key = `${state.orbitalCount}:${state.homo}`;
+  if (orbital.dataset.basis !== key) {
+    orbital.dataset.basis = key;
+    orbital.replaceChildren();
+    for (let index = 1; index <= state.orbitalCount; ++index) {
+      const label = index === state.homo ? ' (HOMO)' : index === state.homo + 1 ? ' (LUMO)' : '';
+      orbital.add(new Option(`${index}${label}`, index));
+    }
+    orbital.value = String(state.homo || 1);
+  }
+}
+
 function render(state) {
   $('document-name').textContent = `${filename}${state.modified ? ' *' : ''}`;
   $('counts').textContent = `${state.atomCount} atoms · ${state.bondCount} bonds`;
   $('undo').disabled = !state.canUndo;
   $('redo').disabled = !state.canRedo;
+  renderCalculations(state);
   document.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === state.tool)));
   $('draw-options').hidden = state.tool !== 'draw';
   $('align-options').hidden = state.tool !== 'AlignTool';
@@ -93,8 +144,10 @@ function render(state) {
   $('label-options').hidden = !showLabel;
   $('tool-help').textContent = toolHelp[state.tool] || '';
   $('tool-help').hidden = !toolHelp[state.tool];
-  for (const input of $('display-styles').querySelectorAll('input'))
+  for (const input of $('display-styles').querySelectorAll('input')) {
+    input.disabled = state.calculating;
     input.checked = state.displayStyles.some(style => style.id === input.dataset.style && style.enabled);
+  }
   $('element').value = String(state.drawOptions.atomicNumber);
   $('bond').value = String(state.drawOptions.bondOrder);
   $('hydrogens').checked = state.drawOptions.adjustHydrogens;
@@ -144,6 +197,15 @@ $('download').onclick = () => action(() => {
   if (format === 'cjson') editor.markSaved();
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
+$('optimize').onclick = () => action(() => editor.calculate('optimize', { method: $('force-field').value }), false);
+$('auto-opt').onclick = () => action(() => editor.setAutoOptimize(!editor.state.autoOptimizing, $('auto-opt-method').value));
+$('surface-type').onchange = () => renderCalculations(editor.state);
+$('render-surface').onclick = () => action(() => {
+  const type = $('surface-type').value;
+  const options = { resolution: type === 'renderOrbital' || type === 'renderElectronDensity' ? 0.25 : 0.15 };
+  if (type === 'renderOrbital') options.orbital = Number($('orbital').value);
+  editor.calculate(type, options);
+}, false);
 $('label-options').onsubmit = event => {
   event.preventDefault();
   action(() => { editor.setPickedLabel($('atom-label').value); message(''); });

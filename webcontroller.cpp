@@ -7,6 +7,9 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <avogadro/core/atom.h>
+#include <avogadro/core/basisset.h>
+#include <avogadro/core/cube.h>
+#include <avogadro/qtgui/extensionplugin.h>
 #include <avogadro/io/fileformatmanager.h>
 #include <avogadro/qtgui/layermodel.h>
 #include <avogadro/qtgui/molecule.h>
@@ -88,6 +91,39 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
   if (auto* labelTool = m_tools.value("LabelEditor"))
     connect(labelTool, SIGNAL(atomPickedChanged()), this, SIGNAL(stateChanged()));
 
+  if (auto* autoOpt = m_tools.value("AutoOpt"))
+    connect(autoOpt, SIGNAL(runningChanged()), this, SIGNAL(stateChanged()));
+
+  for (const auto& id : { "Forcefield", "Surfaces" }) {
+    auto* factory = plugins->pluginFactory<QtGui::ExtensionPluginFactory>(id);
+    if (!factory)
+      continue;
+    auto* extension = factory->createInstance(this);
+    m_calculators.insert(id, extension);
+    connect(extension, &QtGui::ExtensionPlugin::commandFinished, this,
+            [this](const QString& message, const QVariantMap& result) {
+              m_calculating = false;
+              m_calculationMessage = message;
+              if (result.contains("converged") &&
+                  !result.value("converged").toBool())
+                m_calculationMessage +=
+                  tr(" (stopped: %1)").arg(result.value("reason").toString());
+              m_calculationError = false;
+              emit stateChanged();
+            });
+    connect(extension, &QtGui::ExtensionPlugin::commandFailed, this,
+            [this](const QString& message) {
+              m_calculating = false;
+              m_calculationMessage = message;
+              m_calculationError = true;
+              emit stateChanged();
+            });
+    connect(extension, &QtGui::ExtensionPlugin::requestActiveDisplayTypes, this,
+            [this](const QStringList&) {
+              setDisplayStyle("SurfaceRender", true);
+            });
+  }
+
   auto& scene = m_view.sceneModel();
   for (auto* factory : plugins->pluginFactories<QtGui::ScenePluginFactory>())
     scene.addItem(factory->createInstance(&scene));
@@ -102,6 +138,8 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
 WebController::~WebController()
 {
   m_view.removeEventFilter(this);
+  for (auto* extension : m_calculators)
+    extension->setMolecule(nullptr);
   m_view.setMolecule(nullptr);
 }
 
@@ -155,7 +193,22 @@ QJsonObject WebController::state() const
   const auto* labelTool = m_tools.value("LabelEditor");
   const auto pickedIndex =
     labelTool ? labelTool->property("pickedAtomIndex").toLongLong() : -1;
+  const auto* basis = m_molecule->basisSet();
+  const auto cubes = m_molecule->cubes();
+  const auto importedCubes = std::count_if(
+    cubes.begin(), cubes.end(), [](const Core::Cube* cube) {
+      return cube && cube->cubeType() == Core::Cube::Type::FromFile;
+    });
   return { { "tool", m_tool },
+           { "canOptimize", m_calculators.contains("Forcefield") },
+           { "canRenderSurfaces", m_calculators.contains("Surfaces") },
+           { "calculating", m_calculating },
+           { "autoOptimizing", autoOptimizing() },
+           { "calculationMessage", m_calculationMessage },
+           { "calculationError", m_calculationError },
+           { "orbitalCount", basis ? static_cast<double>(basis->molecularOrbitalCount()) : 0.0 },
+           { "homo", basis ? static_cast<double>(basis->homo()) : 0.0 },
+           { "cubeCount", static_cast<double>(importedCubes) },
            { "pickedAtomIndex", pickedIndex },
            { "pickedLabel", labelTool ? labelTool->property("pickedLabel").toString()
                                        : QString() },
@@ -174,7 +227,7 @@ QJsonObject WebController::state() const
 bool WebController::setTool(const QString& name)
 {
   auto* tool = m_tools.value(name);
-  if (!tool)
+  if (!tool || m_calculating || autoOptimizing())
     return false;
   m_view.setActiveTool(tool);
   m_tool = name;
@@ -208,6 +261,45 @@ bool WebController::setPickedLabel(const QString& label)
          tool->handleCommand("setPickedLabel", { { "label", label } });
 }
 
+bool WebController::autoOptimizing() const
+{
+  const auto* tool = m_tools.value("AutoOpt");
+  return tool && tool->property("running").toBool();
+}
+
+bool WebController::setAutoOptimize(bool enabled, const QString& method)
+{
+  auto* tool = m_tools.value("AutoOpt");
+  if (m_calculating || m_tool != "AutoOpt" || !tool)
+    return false;
+  return tool->handleCommand(enabled ? "startAutoOptimize" : "stopAutoOptimize",
+                             { { "method", method } });
+}
+
+bool WebController::calculate(const QString& command, const QVariantMap& options)
+{
+  const QStringList surfaceCommands{ "renderVDW", "renderSolventAccessible",
+                                     "renderSolventExcluded", "renderOrbital",
+                                     "renderElectronDensity", "renderCube" };
+  if (m_calculating || autoOptimizing() || m_molecule->atomCount() == 0 ||
+      (command != "optimize" && !surfaceCommands.contains(command)))
+    return false;
+  auto* extension = m_calculators.value(command == "optimize" ? "Forcefield"
+                                                               : "Surfaces");
+  if (!extension)
+    return false;
+
+  m_calculating = true;
+  m_calculationError = false;
+  m_calculationMessage = tr("Calculating…");
+  if (!extension->handleCommand(command, options)) {
+    m_calculating = false;
+    return false;
+  }
+  emit stateChanged();
+  return true;
+}
+
 bool WebController::setDrawOptions(const QVariantMap& options)
 {
   return m_tools["draw"]->handleCommand("setDrawOptions", options);
@@ -221,6 +313,9 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
   m_molecule = std::move(next);
   m_layers->addMolecule(m_molecule.get());
   m_view.setMolecule(m_molecule.get());
+  for (auto* extension : m_calculators)
+    extension->setMolecule(m_molecule.get());
+  m_calculationMessage.clear();
   if (m_molecule->layerInfo()->enable.empty())
     setDisplayStyle("BallStick", true);
   auto& stack = m_molecule->undoMolecule()->undoStack();
@@ -239,15 +334,20 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
 
 void WebController::newMolecule()
 {
-  replaceMolecule(std::make_unique<QtGui::Molecule>());
+  if (!m_calculating && !autoOptimizing())
+    replaceMolecule(std::make_unique<QtGui::Molecule>());
 }
 
 QJsonObject WebController::loadMolecule(const QString& text,
                                         const QString& formatName)
 {
   const QString format = formatName.toLower();
-  if (!supported(format))
-    return failure("Supported formats: CJSON, MOL, SDF, XYZ.");
+  if (m_calculating || autoOptimizing())
+    return failure(tr("Wait for the current calculation to finish."));
+  if (!supported(format) &&
+      !(m_calculators.contains("Surfaces") &&
+        QStringList{ "fchk", "molden", "cube" }.contains(format)))
+    return failure(tr("Unsupported molecule file format."));
   bool multiple = false;
   const auto input = firstRecord(text, format, multiple).toStdString();
   auto next = std::make_unique<QtGui::Molecule>();
@@ -292,11 +392,15 @@ void WebController::markSaved()
 }
 void WebController::undo()
 {
+  if (m_calculating || autoOptimizing())
+    return;
   m_molecule->undoMolecule()->undoStack().undo();
   m_view.updateScene();
 }
 void WebController::redo()
 {
+  if (m_calculating || autoOptimizing())
+    return;
   m_molecule->undoMolecule()->undoStack().redo();
   m_view.updateScene();
 }
@@ -308,6 +412,8 @@ void WebController::resetCamera()
 
 void WebController::deleteSelection()
 {
+  if (m_calculating || autoOptimizing())
+    return;
   // The Editor command checks active, selected and neighbouring layer locks
   // before making a single undoable edit.
   m_tools["draw"]->handleCommand("removeSelectedAtoms", {});

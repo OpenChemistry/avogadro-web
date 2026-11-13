@@ -13,7 +13,7 @@
       <fieldset id="controls" disabled>
         <legend>Molecule</legend>
         <div class="row"><button id="new">New</button><button id="open">Open…</button></div>
-        <input type="file" id="file" accept=".cjson,.mol,.sdf,.xyz" hidden>
+        <input type="file" id="file" accept=".cjson,.mol,.sdf,.xyz,.fchk,.molden,.cube" hidden>
         <label>Download format<select id="format"><option value="cjson">CJSON</option><option value="mol">MOL</option><option value="sdf">SDF</option><option value="xyz">XYZ</option></select></label>
         <button id="download">Download</button>
         <hr>
@@ -31,6 +31,26 @@
           <label>Atom label<input id="atom-label" type="text" autocomplete="off"></label>
           <button type="submit">Apply label</button>
         </form>
+        <section id="auto-opt-options" aria-label="AutoOptimize" hidden>
+          <label>Force field<select id="auto-opt-method"><option value="UFF">UFF</option><option value="LJ">Lennard-Jones</option></select></label>
+          <button id="auto-opt">Start AutoOptimize</button>
+        </section>
+        <details id="calculations" hidden>
+          <summary>Calculations</summary>
+          <label id="force-field-label">Force field<select id="force-field"><option value="UFF">UFF</option><option value="LJ">Lennard-Jones</option></select></label>
+          <button id="optimize">Optimize Geometry</button>
+          <label id="surface-label">Surface<select id="surface-type">
+            <option value="renderVDW">Van der Waals</option>
+            <option value="renderSolventAccessible">Solvent accessible</option>
+            <option value="renderSolventExcluded">Solvent excluded</option>
+            <option value="renderOrbital">Molecular orbital</option>
+            <option value="renderElectronDensity">Electron density</option>
+            <option value="renderCube">Imported cube</option>
+          </select></label>
+          <label id="orbital-label" hidden>Orbital<select id="orbital"></select></label>
+          <button id="render-surface">Render surface</button>
+          <p id="calculation-status" role="status"></p>
+        </details>
         <p id="tool-help" hidden></p>
         <details>
           <summary>Display styles</summary>

@@ -12,6 +12,7 @@ const url = process.argv[2] || 'http://127.0.0.1:8000';
 const output = resolve(process.argv[3] || 'browser-evidence');
 const testWidgetUpdate = process.argv.includes('--widget-update');
 const testPlugins = process.argv.includes('--plugins');
+const quantumFixture = process.env.AVOGADRO_FCHK_FIXTURE;
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(tmpdir(), 'avogadro-browser-'));
 const browser = spawn(process.env.CHROME_BINARY || 'google-chrome', [
@@ -252,9 +253,9 @@ try {
     await load(fixture);
     await wait(`document.querySelector('#document-name').textContent === 'tool-fixture.cjson'`, 5000);
     const discovered = await evaluate(`Array.from(document.querySelectorAll('[data-tool]'), button => button.dataset.tool)`);
-    assert.deepEqual(discovered.sort(), ['AlignTool', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
+    assert.deepEqual(discovered.sort(), ['AlignTool', 'AutoOpt', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
     const styles = await evaluate(`Array.from(document.querySelectorAll('[data-style]'), input => input.dataset.style)`);
-    assert.deepEqual(styles.sort(), ['BallStick', 'Label', 'Licorice', 'VanDerWaals', 'Wireframe'].sort());
+    assert.deepEqual(styles.sort(), ['BallStick', 'Label', 'Licorice', 'SurfaceRender', 'VanDerWaals', 'Wireframe'].sort());
     checks.push('Tool and display controls discovered from WASM factories');
 
     await style('BallStick', false);
@@ -328,6 +329,76 @@ try {
     assert.equal((await exportCjson()).atoms.labels[0], 'T');
     await viewportImage('edit-label.png');
     checks.push('Edit Labels saves a custom atom label and enables Labels');
+  }
+  if (quantumFixture) {
+    await evaluate(`document.querySelector('#calculations').open = true`);
+    const exportCoords = async () => {
+      await set('format', 'cjson');
+      await click('download');
+      const path = join(output, 'strained.cjson');
+      for (let i = 0; i < 30; ++i) {
+        if ((await readdir(output)).includes('strained.cjson')) {
+          const data = JSON.parse(await readFile(path, 'utf8'));
+          await rm(path);
+          return data.atoms.coords['3d'];
+        }
+        await delay(100);
+      }
+      throw new Error('Missing optimized CJSON');
+    };
+    const strained = join(profile, 'strained.xyz');
+    await writeFile(strained, '3\nStrained water\nO 0 0 0\nH 0.55 0 0\nH 0 0.65 0\n');
+    await load(strained);
+    await wait(`document.querySelector('#counts').textContent.startsWith('3 atoms')`, 5000);
+    const original = await exportCoords();
+    await click('optimize');
+    await wait(`document.querySelector('#calculation-status').textContent.includes('Energy') ||
+      document.querySelector('#calculation-status').dataset.error === 'true'`, 20000);
+    assert.match(await evaluate(`document.querySelector('#calculation-status').textContent`), /UFF Energy/);
+    assert.notDeepEqual(await exportCoords(), original);
+    await click('undo');
+    assert.deepEqual(await exportCoords(), original);
+    checks.push('UFF Optimize Geometry changes coordinates and undoes in one step');
+
+    await evaluate(`document.querySelector('[data-tool="AutoOpt"]').click()`);
+    await click('auto-opt');
+    await wait(`document.querySelector('#auto-opt').textContent.startsWith('Stop')`, 5000);
+    await wait(`document.querySelector('#document-name').textContent.endsWith(' *')`, 15000);
+    await click('auto-opt');
+    await wait(`document.querySelector('#auto-opt').textContent.startsWith('Start')`, 5000);
+    assert.notDeepEqual(await exportCoords(), original);
+    checks.push('AutoOptimize starts, updates coordinates, and stops');
+
+    const surfaces = new Set();
+    const renderSurface = async (type, image) => {
+      await set('surface-type', type);
+      await click('render-surface');
+      await wait(`document.querySelector('#calculation-status').textContent === 'Surface Finished' ||
+        document.querySelector('#calculation-status').dataset.error === 'true'`, 25000);
+      assert.equal(await evaluate(`document.querySelector('#calculation-status').textContent`), 'Surface Finished');
+      assert.equal(await evaluate(`document.querySelector('[data-style="SurfaceRender"]').checked`), true);
+      await screenshot(image);
+      surfaces.add(createHash('sha256').update(await readFile(join(output, image))).digest('hex'));
+    };
+    for (const type of ['renderVDW', 'renderSolventAccessible', 'renderSolventExcluded'])
+      await renderSurface(type, `${type}.png`);
+    checks.push('Van der Waals, solvent-accessible and solvent-excluded surfaces');
+
+    await load(resolve(quantumFixture));
+    await wait(`document.querySelector('#orbital').options.length > 1`, 7000);
+    await renderSurface('renderOrbital', 'orbital.png');
+    await renderSurface('renderElectronDensity', 'density.png');
+    assert.equal(surfaces.size, 5, 'Surface renders produce distinct frames');
+    checks.push('Formatted checkpoint import, molecular orbital and electron density');
+    const dataDir = resolve(quantumFixture, '../..');
+    await load(join(dataDir, 'molden/H2O.molden'));
+    await wait(`document.querySelector('#document-name').textContent === 'H2O.molden' &&
+      document.querySelector('#orbital').options.length > 1`, 7000);
+    await renderSurface('renderOrbital', 'molden-orbital.png');
+    await load(join(dataDir, 'cube/benzene-homo.cube'));
+    await wait(`!document.querySelector('[value="renderCube"]').disabled`, 7000);
+    await renderSurface('renderCube', 'imported-cube.png');
+    checks.push('Molden orbital and imported Gaussian cube rendering');
   }
   await evaluate(`document.querySelector('[data-tool="navigate"]').click()`);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...rect, button: 'left', clickCount: 1 });

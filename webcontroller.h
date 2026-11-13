@@ -11,6 +11,7 @@ namespace Avogadro {
 namespace QtGui {
 class Molecule;
 class ToolPlugin;
+class ExtensionPlugin;
 class LayerModel;
 }
 namespace QtOpenGL {
@@ -31,6 +32,8 @@ public:
   bool setDisplayStyle(const QString& id, bool enabled);
   bool alignPickedAtoms(const QString& axis);
   bool setPickedLabel(const QString& label);
+  bool calculate(const QString& command, const QVariantMap& options);
+  bool setAutoOptimize(bool enabled, const QString& method);
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);
@@ -51,6 +54,11 @@ private:
   std::unique_ptr<QtGui::Molecule> m_molecule;
   std::unique_ptr<QtGui::LayerModel> m_layers;
   QMap<QString, QtGui::ToolPlugin*> m_tools;
+  QMap<QString, QtGui::ExtensionPlugin*> m_calculators;
+  bool m_calculating = false;
+  QString m_calculationMessage;
+  bool m_calculationError = false;
+  bool autoOptimizing() const;
   QString m_tool = QStringLiteral("draw");
 };
 } // namespace Web

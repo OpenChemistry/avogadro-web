@@ -9,7 +9,8 @@ libs = build / 'avogadrolibs'
 app = build / 'avogadro-web'
 prefix = build / 'prefix'
 excluded = ['pythonscript.cpp', 'packagemanager.cpp', 'interfacescript.cpp',
-            'interfacewidget.cpp', '/qtplugins/openbabel/', '/qtplugins/forcefield/',
+            'interfacewidget.cpp', '/qtplugins/openbabel/', '/qtplugins/forcefield/obmmenergy.cpp',
+            '/qtplugins/forcefield/scriptenergy.cpp',
             '/qtplugins/quantuminput/', '/qtplugins/playertool/', '/molequeue/']
 compiled = '\n'.join(line for line in (libs / 'build.ninja').read_text().splitlines()
                      if line.startswith('build ') and 'CXX_COMPILER' in line)
@@ -20,14 +21,14 @@ plugins = re.findall(r'Q_IMPORT_PLUGIN\((\w+)Factory\)',
 assert set(plugins) == {
     'Navigator', 'Editor', 'Selection', 'AlignTool', 'BondCentric', 'LabelEditor',
     'Manipulator', 'MeasureTool', 'BallStick', 'Label', 'Licorice', 'VanDerWaals',
-    'Wireframe',
+    'Wireframe', 'AutoOpt', 'Forcefield', 'SurfaceRender', 'Surfaces', 'Orbitals',
 }, plugins
 for name in ['pythonscript', 'packagemanager', 'interfacescript', 'interfacewidget']:
     assert not (prefix / f'include/avogadro/qtgui/{name}.h').exists(), name
 config = (prefix / 'lib/cmake/avogadrolibs/AvogadroLibsConfig.cmake').read_text()
 assert re.search(r'set\(AvogadroLibs_USE_SUBPROCESS\s+"OFF"\)', config)
 exports = (prefix / 'lib/cmake/avogadrolibs/AvogadroLibsTargets.cmake').read_text()
-for name in ['Avogadro::MoleQueue', 'Avogadro::OpenBabel', 'Avogadro::ForceField', 'LibArchive']:
+for name in ['Avogadro::MoleQueue', 'Avogadro::OpenBabel', 'LibArchive']:
     assert name not in exports, name
 for source in ['/avogadro/mainwindow.cpp', '/avogadro/rpc/', 'rpclistener.cpp']:
     assert source not in (app / 'build.ninja').read_text(), source

@@ -19,6 +19,14 @@ input after you pick an atom. The display menu toggles Ball and Stick, Wireframe
 Licorice, Van der Waals, and Labels on the active layer. CJSON saves the enabled
 styles per layer.
 
+With the multithreaded Qt WASM build, **Calculations** offers Optimize
+Geometry with UFF or Lennard-Jones, three molecular surfaces, and orbital
+and electron-density isosurfaces. Select **Auto Optimize** in the toolbar
+to run continuous optimization with Start and Stop. Open a Gaussian
+formatted checkpoint (.fchk) or Molden file for orbital calculations, or
+a Gaussian cube (.cube) to render an imported grid. Use **Display styles**
+to show or hide the resulting surface.
+
 CJSON is the default download format. MOL, SDF and XYZ are also supported. Open
 parses into a temporary document; errors preserve the molecule and undo history.
 Open and New clear history on success. Multi-record SDF and XYZ imports use the
@@ -187,3 +195,8 @@ For the tool and display tests, serve a WASM build made with
 ```sh
 node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 evidence/plugins --plugins
 ```
+
+
+To include calculation checks in the Chrome run, set
+`AVOGADRO_FCHK_FIXTURE` to the absolute path of
+`avogadrodata/data/fchk/h2o-restricted.fchk` in the superbuild checkout.

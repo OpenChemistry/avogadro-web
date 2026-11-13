@@ -35,3 +35,5 @@ dialog { max-width: 420px; border: 1px solid #afc2bc; border-radius: 12px; paddi
 dialog::backdrop { background: #132e3280; }
 dialog form { display: flex; justify-content: flex-end; gap: .5rem; }
 @media (max-width: 650px) { main { grid-template-columns: 185px 1fr; } aside { padding: .65rem; } header { padding: .65rem; } header > span:first-of-type { display: none; } }
+
+#calculation-status[data-error="true"] { color: #a52a31; }
