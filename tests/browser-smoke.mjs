@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY
+// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const url = process.argv[2] || 'http://127.0.0.1:8000';
 const output = resolve(process.argv[3] || 'browser-evidence');
+const testWidgetUpdate = process.argv.includes('--widget-update');
+const testPlugins = process.argv.includes('--plugins');
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(tmpdir(), 'avogadro-browser-'));
 const browser = spawn(process.env.CHROME_BINARY || 'google-chrome', [
@@ -79,6 +82,20 @@ try {
   await send('Runtime.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: output }, null);
+  if (testWidgetUpdate) {
+    // Install before WASM starts so cached WebGL function references are counted.
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+      globalThis.viewportDrawCalls = 0;
+      for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) {
+        const draw = WebGL2RenderingContext.prototype[name];
+        WebGL2RenderingContext.prototype[name] = function (...args) {
+          draw.apply(this, args);
+          if (this.canvas.getRootNode().host?.id === 'qt-shadow-container')
+            ++globalThis.viewportDrawCalls;
+        };
+      }
+    ` });
+  }
   console.log('Navigating', url);
   await send('Page.navigate', { url });
   await wait(`document.querySelector('#controls') && !document.querySelector('#controls').disabled`);
@@ -91,6 +108,35 @@ try {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...rect, button: 'left', clickCount: 1 });
   await wait(`document.querySelector('#counts').textContent.startsWith('5 atoms')`, 10000);
   checks.push('Draw carbon and automatic hydrogens');
+  if (testWidgetUpdate) {
+    await wait('viewportDrawCalls > 0', 5000);
+    const idleDrawCalls = await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      let lastDraw = viewportDrawCalls;
+      let quietSince = started;
+      function check(now) {
+        if (viewportDrawCalls !== lastDraw) {
+          lastDraw = viewportDrawCalls;
+          quietSince = now;
+        }
+        if (now - quietSince >= 250) {
+          try {
+            globalThis.updateAvogadroViewportForTest();
+            resolve(lastDraw);
+          } catch (error) {
+            reject(error);
+          }
+        } else if (now - started >= 5000) {
+          reject(new Error('WebGL viewport did not go idle'));
+        } else {
+          requestAnimationFrame(check);
+        }
+      }
+      requestAnimationFrame(check);
+    })`);
+    await wait(`viewportDrawCalls > ${idleDrawCalls}`, 5000);
+    checks.push('External QWidget::update() redraws the idle WebGL viewport');
+  }
   assert.equal(await evaluate(`(()=>{const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;})()`), true);
   checks.push('Unsaved document navigation protection');
   await screenshot('draw.png');
@@ -138,6 +184,151 @@ try {
   const files = await readdir(output);
   for (const extension of ['mol', 'sdf', 'xyz']) assert.ok(files.some(name => name.endsWith(`.${extension}`)));
   checks.push('MOL/SDF/XYZ downloads');
+  if (testPlugins) {
+    const tool = async id => {
+      const selector = JSON.stringify(`[data-tool="${id}"]`);
+      await evaluate(`document.querySelector(${selector}).click()`);
+      await wait(`document.querySelector(${selector}).getAttribute('aria-pressed') === 'true'`, 5000);
+    };
+    const style = async (id, enabled) => {
+      const selector = JSON.stringify(`[data-style="${id}"]`);
+      await evaluate(`{ const input = document.querySelector(${selector}); if (input.checked !== ${enabled}) input.click(); }`);
+      await delay(200);
+    };
+    const mouse = (type, point, button = 'left', clickCount = 1) => send('Input.dispatchMouseEvent', {
+      type, ...point, button, clickCount,
+    });
+    const pick = async (point, clickCount = 1) => {
+      await mouse('mousePressed', point, 'left', clickCount);
+      await mouse('mouseReleased', point, 'left', clickCount);
+      await delay(150);
+    };
+    const drag = async (point, dx, dy, button = 'left') => {
+      await mouse('mousePressed', point, button);
+      const end = { x: point.x + dx, y: point.y + dy };
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', ...end, buttons: button === 'left' ? 1 : 2,
+      });
+      await mouse('mouseReleased', end, button);
+      await delay(200);
+    };
+    const atom = index => evaluate(`(() => {
+      const r = document.querySelector('#viewport').getBoundingClientRect();
+      const p = globalThis.avogadroAtomPositionForTest(${index});
+      return { x: r.x + p.x, y: r.y + p.y };
+    })()`);
+    const viewportImage = async (name) => {
+      const clip = await evaluate(`(() => {
+        const {x, y, width, height} = document.querySelector('#viewport').getBoundingClientRect();
+        return {x, y, width, height, scale: 1};
+      })()`);
+      const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
+      if (name) await writeFile(join(output, name), Buffer.from(data, 'base64'));
+      return createHash('sha256').update(data).digest('hex');
+    };
+    const exportCjson = async () => {
+      const before = new Set(await readdir(output));
+      await set('format', 'cjson');
+      await click('download');
+      for (let i = 0; i < 20; ++i) {
+        const name = (await readdir(output)).find(file => !before.has(file) && file.endsWith('.cjson'));
+        if (name) {
+          const path = join(output, name);
+          const molecule = JSON.parse(await readFile(path, 'utf8'));
+          await rm(path);
+          return molecule;
+        }
+        await delay(100);
+      }
+      throw new Error('New CJSON download did not finish');
+    };
+
+    const fixture = join(profile, 'tool-fixture.cjson');
+    await writeFile(fixture, JSON.stringify({
+      chemicalJson: 1,
+      atoms: { elements: { number: [6, 8] }, coords: { '3d': [1, 1, 0, 3, 2, 0] } },
+      bonds: { connections: { index: [0, 1] }, order: [1] },
+    }));
+    await load(fixture);
+    await wait(`document.querySelector('#document-name').textContent === 'tool-fixture.cjson'`, 5000);
+    const discovered = await evaluate(`Array.from(document.querySelectorAll('[data-tool]'), button => button.dataset.tool)`);
+    assert.deepEqual(discovered.sort(), ['AlignTool', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
+    const styles = await evaluate(`Array.from(document.querySelectorAll('[data-style]'), input => input.dataset.style)`);
+    assert.deepEqual(styles.sort(), ['BallStick', 'Label', 'Licorice', 'VanDerWaals', 'Wireframe'].sort());
+    checks.push('Tool and display controls discovered from WASM factories');
+
+    await style('BallStick', false);
+    const empty = await viewportImage();
+    const renderings = new Set([empty]);
+    for (const id of ['BallStick', 'Licorice', 'VanDerWaals', 'Wireframe', 'Label']) {
+      await style(id, true);
+      renderings.add(await viewportImage(`style-${id}.png`));
+      await style(id, false);
+      assert.equal(await viewportImage(), empty, `${id} stops drawing when disabled`);
+    }
+    assert.equal(renderings.size, 6, 'Each style produces a different viewport image');
+    await style('Licorice', true);
+    const styled = await exportCjson();
+    assert.deepEqual(styled.layer.enable.Licorice, [true]);
+    assert.deepEqual(styled.layer.enable['Ball and Stick'], [false]);
+    await writeFile(fixture, JSON.stringify(styled));
+    await load(fixture);
+    assert.equal(await evaluate(`document.querySelector('[data-style="Licorice"]').checked &&
+      !document.querySelector('[data-style="BallStick"]').checked`), true);
+    await style('Licorice', false);
+    await style('BallStick', true);
+    checks.push('All five display styles render, toggle off, and CJSON restores enabled styles');
+
+    await tool('MeasureTool');
+    const unmeasured = await viewportImage();
+    await pick(await atom(0));
+    await pick(await atom(1));
+    assert.notEqual(await viewportImage('measure.png'), unmeasured);
+    const r = await atom(1);
+    const emptyPoint = { x: rect.x, y: Math.max(70, r.y - 190) };
+    await pick(emptyPoint);
+    await pick(emptyPoint, 2);
+    assert.equal(await viewportImage(), unmeasured, 'Double-click clears the measurement overlay');
+    checks.push('Measure draws and clears its distance overlay');
+
+    await tool('AlignTool');
+    await pick(await atom(0));
+    await pick(await atom(1));
+    await set('align-axis', 'y');
+    await click('align');
+    const aligned = (await exportCjson()).atoms.coords['3d'];
+    assert.ok(aligned.every((value, index) => Math.abs(value - [0, 0, 0, 0, Math.sqrt(5), 0][index]) < 1e-5));
+    await click('undo');
+    assert.deepEqual((await exportCjson()).atoms.coords['3d'], [1, 1, 0, 3, 2, 0]);
+    checks.push('Align moves picked atoms to the requested axis and undoes in one step');
+
+    await tool('Manipulator');
+    await drag(await atom(0), 20, -15);
+    const moved = (await exportCjson()).atoms.coords['3d'];
+    assert.notDeepEqual(moved.slice(0, 3), [1, 1, 0]);
+    assert.deepEqual(moved.slice(3), [3, 2, 0]);
+    await click('undo');
+    checks.push('Manipulate drag moves the picked atom');
+
+    await tool('BondCentric');
+    const left = await atom(0), right = await atom(1);
+    await pick({ x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 });
+    await drag(right, 30, -15, 'right');
+    const stretched = (await exportCjson()).atoms.coords['3d'];
+    assert.ok(Math.abs(Math.hypot(stretched[3] - stretched[0], stretched[4] - stretched[1], stretched[5] - stretched[2]) - Math.sqrt(5)) > 1e-3);
+    await click('undo');
+    checks.push('Bond-Centric right-drag changes the selected bond length');
+
+    await tool('LabelEditor');
+    await pick(await atom(0));
+    await wait(`!document.querySelector('#label-options').hidden`, 5000);
+    await set('atom-label', 'T');
+    await evaluate(`document.querySelector('#label-options button').click()`);
+    await wait(`document.querySelector('[data-style="Label"]').checked`, 5000);
+    assert.equal((await exportCjson()).atoms.labels[0], 'T');
+    await viewportImage('edit-label.png');
+    checks.push('Edit Labels saves a custom atom label and enables Labels');
+  }
   await evaluate(`document.querySelector('[data-tool="navigate"]').click()`);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...rect, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + 70, y: rect.y + 30, buttons: 1 });

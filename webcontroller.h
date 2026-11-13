@@ -28,6 +28,9 @@ public:
   QJsonObject state() const;
   QtGui::Molecule& molecule() const;
   bool setTool(const QString& name);
+  bool setDisplayStyle(const QString& id, bool enabled);
+  bool alignPickedAtoms(const QString& axis);
+  bool setPickedLabel(const QString& label);
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);

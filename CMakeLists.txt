@@ -38,6 +38,9 @@ target_link_libraries(avogadro-web PRIVATE AvogadroWebController)
 
 if(EMSCRIPTEN)
   target_link_options(avogadro-web PRIVATE --bind -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
+  if(ENABLE_TESTING)
+    target_compile_definitions(avogadro-web PRIVATE AVOGADRO_WASM_BROWSER_TESTS)
+  endif()
   set_target_properties(avogadro-web PROPERTIES QT_WASM_EXPORT_NAME createAvogadroWeb)
   # qt_add_executable deploys the loader and Emscripten auxiliary files.
   foreach(asset index.html editor.js editor.css serve-wasm.py)

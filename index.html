@@ -17,16 +17,25 @@
         <label>Download format<select id="format"><option value="cjson">CJSON</option><option value="mol">MOL</option><option value="sdf">SDF</option><option value="xyz">XYZ</option></select></label>
         <button id="download">Download</button>
         <hr>
-        <div class="tools" role="group" aria-label="Tools">
-          <button data-tool="navigate" aria-pressed="false">Navigate</button>
-          <button data-tool="draw" aria-pressed="true">Draw</button>
-          <button data-tool="select" aria-pressed="false">Select</button>
-        </div>
+        <div id="tools" class="tools" role="group" aria-label="Tools"></div>
         <section id="draw-options" aria-label="Draw options">
           <label>Element<select id="element"></select></label>
           <label>Bond<select id="bond"><option value="0">Automatic</option><option value="1">Single</option><option value="2">Double</option><option value="3">Triple</option></select></label>
           <label class="check"><input type="checkbox" id="hydrogens" checked>Adjust hydrogens</label>
         </section>
+        <section id="align-options" aria-label="Align options" hidden>
+          <label>Axis<select id="align-axis"><option>x</option><option>y</option><option>z</option></select></label>
+          <button id="align">Align picked atoms</button>
+        </section>
+        <form id="label-options" aria-label="Edit atom label" hidden>
+          <label>Atom label<input id="atom-label" type="text" autocomplete="off"></label>
+          <button type="submit">Apply label</button>
+        </form>
+        <p id="tool-help" hidden></p>
+        <details>
+          <summary>Display styles</summary>
+          <div id="display-styles"></div>
+        </details>
         <div class="row"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button></div>
         <button id="delete">Delete selected atoms</button>
         <button id="reset">Fit molecule</button>

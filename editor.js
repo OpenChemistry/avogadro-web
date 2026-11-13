@@ -10,6 +10,15 @@ export class AvogadroEditor extends EventTarget {
   }
   get state() { return JSON.parse(this.instance.editorState()); }
   setTool(name) { if (!this.instance.setTool(name)) throw new Error('Unknown tool.'); }
+  setDisplayStyle(id, enabled) {
+    if (!this.instance.setDisplayStyle(id, enabled)) throw new Error('Unknown display style.');
+  }
+  alignPickedAtoms(axis) {
+    if (!this.instance.alignPickedAtoms(axis)) throw new Error('Pick one or two atoms to align.');
+  }
+  setPickedLabel(label) {
+    if (!this.instance.setPickedLabel(label)) throw new Error('Pick an atom to label.');
+  }
   setDrawOptions(options) {
     if (!this.instance.setDrawOptions(JSON.stringify(options))) throw new Error('Invalid draw options.');
   }
@@ -31,7 +40,41 @@ $('element').value = '6';
 let editor;
 let filename = 'Untitled';
 let busy = false;
+let pickedAtomIndex = -1;
+let pickedLabel;
 const message = (text, error = false) => { $('status').textContent = text; $('status').dataset.error = String(error); };
+const toolHelp = {
+  AlignTool: 'Pick the atom to move to the origin, then optionally a second atom to align to the chosen axis.',
+  BondCentric: 'Pick a bond, then right-drag one of its atoms to change its length.',
+  LabelEditor: 'Click an atom to edit its label.',
+  Manipulator: 'Drag an atom to move it. Select several atoms first to move them together.',
+  MeasureTool: 'Click up to four atoms to measure distances, angles, and dihedrals. Double-click to clear.',
+};
+
+function setupPlugins(state) {
+  const tools = new Map(state.tools.map(tool => [tool.id, tool]));
+  const order = ['navigate', 'draw', 'select'];
+  for (const id of new Set([...order, ...tools.keys()])) {
+    const tool = tools.get(id);
+    if (!tool) continue;
+    const button = document.createElement('button');
+    button.dataset.tool = id;
+    button.textContent = tool.label;
+    button.onclick = () => action(() => editor.setTool(id));
+    $('tools').append(button);
+  }
+  for (const style of state.displayStyles) {
+    const label = document.createElement('label');
+    label.className = 'check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.style = style.id;
+    input.onchange = () => action(() => editor.setDisplayStyle(style.id, input.checked), false);
+    label.append(input, style.label);
+    $('display-styles').append(label);
+  }
+}
+
 function render(state) {
   $('document-name').textContent = `${filename}${state.modified ? ' *' : ''}`;
   $('counts').textContent = `${state.atomCount} atoms · ${state.bondCount} bonds`;
@@ -39,6 +82,19 @@ function render(state) {
   $('redo').disabled = !state.canRedo;
   document.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === state.tool)));
   $('draw-options').hidden = state.tool !== 'draw';
+  $('align-options').hidden = state.tool !== 'AlignTool';
+  const showLabel = state.tool === 'LabelEditor' && state.pickedAtomIndex >= 0;
+  if (showLabel && ($('label-options').hidden ||
+      pickedAtomIndex !== state.pickedAtomIndex || pickedLabel !== state.pickedLabel)) {
+    $('atom-label').value = state.pickedLabel;
+  }
+  pickedAtomIndex = state.pickedAtomIndex;
+  pickedLabel = state.pickedLabel;
+  $('label-options').hidden = !showLabel;
+  $('tool-help').textContent = toolHelp[state.tool] || '';
+  $('tool-help').hidden = !toolHelp[state.tool];
+  for (const input of $('display-styles').querySelectorAll('input'))
+    input.checked = state.displayStyles.some(style => style.id === input.dataset.style && style.enabled);
   $('element').value = String(state.drawOptions.atomicNumber);
   $('bond').value = String(state.drawOptions.bondOrder);
   $('hydrogens').checked = state.drawOptions.adjustHydrogens;
@@ -88,7 +144,11 @@ $('download').onclick = () => action(() => {
   if (format === 'cjson') editor.markSaved();
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
-document.querySelectorAll('[data-tool]').forEach(button => { button.onclick = () => action(() => editor.setTool(button.dataset.tool)); });
+$('label-options').onsubmit = event => {
+  event.preventDefault();
+  action(() => { editor.setPickedLabel($('atom-label').value); message(''); });
+};
+$('align').onclick = () => action(() => { editor.alignPickedAtoms($('align-axis').value); message(''); });
 for (const id of ['element', 'bond', 'hydrogens']) $(id).onchange = () => action(() => editor.setDrawOptions({ atomicNumber: Number($('element').value), bondOrder: Number($('bond').value), adjustHydrogens: $('hydrogens').checked }), false);
 for (const [id, method] of [['undo', 'undo'], ['redo', 'redo'], ['delete', 'deleteSelection'], ['reset', 'resetCamera']]) $(id).onclick = () => action(() => editor[method]());
 $('viewport').addEventListener('contextmenu', event => event.preventDefault());
@@ -137,6 +197,7 @@ try {
     });
   }, { capture: true, passive: false });
   editor = new AvogadroEditor(instance);
+  setupPlugins(editor.state);
   editor.addEventListener('statechange', event => render(event.detail));
   new ResizeObserver(() => instance.qtResizeContainerElement($('viewport'))).observe($('viewport'));
   $('loading').hidden = true; $('controls').disabled = false;
