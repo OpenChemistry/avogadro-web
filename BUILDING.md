@@ -5,8 +5,7 @@
 Tests use fresh profiles and never attach to a user's browser. Chromium's test
 uses Node's built-in APIs. Firefox and startup-failure tests use `puppeteer-core`
 (optionally located by `PUPPETEER_MODULE`). Firefox can run inside `xvfb-run` for
-software rendering on Linux. See [VALIDATION.md](VALIDATION.md) for the exact
-commands and results from this implementation.
+software rendering on Linux. The commands below run the checks against the supplied build.
 
 ```sh
 node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 evidence/chromium
@@ -118,3 +117,9 @@ ctest --test-dir build-web-controller --output-on-failure
 For WASM, configure this repository with `qt-cmake` from the WASM Qt kit and
 point `CMAKE_PREFIX_PATH` and `CMAKE_FIND_ROOT_PATH` at the matching WASM
 Avogadro library installation. Use a fresh build directory. No source files or CMake modules from `avogadroapp` are needed.
+
+Workspace UI checks (use a runtime with the current plugins):
+
+```sh
+node avogadro-web/tests/ui-smoke.mjs http://127.0.0.1:8000 evidence/ui --full-runtime
+```
