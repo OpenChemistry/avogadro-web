@@ -58,6 +58,13 @@ Open `http://127.0.0.1:8000/`. Stop the server with Ctrl+C. The server binds onl
 loopback and serves its working directory. It sends the required isolation
 headers and serves the optional precompressed WASM file when gzip is accepted.
 
+Qt's WASM kit selects whether the build uses threads. For the browser release,
+use the multithreaded kit and serve it with `Cross-Origin-Opener-Policy:
+same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. These headers
+enable cross-origin isolation and the `SharedArrayBuffer` used by Qt threads.
+The current browser loader requires that isolation. The single-threaded kit
+can be used to build the libraries without forcing `-pthread`.
+
 `ENABLE_SUBPROCESS` defaults ON natively and OFF under Emscripten; it is separate
 from `USE_PYTHON`, which builds Python API bindings. Its value is exported as
 `AvogadroLibs_USE_SUBPROCESS` and through the native target definition
@@ -130,7 +137,7 @@ on the Qt application thread, return values, and expose no C++ pointers.
 `AvogadroEditor` in `editor.js` wraps the Embind instance:
 
 - `setTool('navigate' | 'draw' | 'select')`
-- `setDrawOptions({ atomicNumber: 1..118, bondOrder: 0..3, adjustHydrogens: bool })`
+- `setDrawOptions({ atomicNumber: 1..118, bondOrder: 0..3, adjustHydrogens: bool, adjustBondLengths: bool })`
 - `newMolecule()`, `loadMolecule(text, format)`, `exportMolecule(format = 'cjson')`
 - `deleteSelection()`, `undo()`, `redo()`, `resetCamera()`
 - `state` and `statechange` events containing tool, drawOptions, atomCount,
