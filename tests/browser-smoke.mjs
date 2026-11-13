@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins]
+// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
@@ -12,6 +12,7 @@ const url = process.argv[2] || 'http://127.0.0.1:8000';
 const output = resolve(process.argv[3] || 'browser-evidence');
 const testWidgetUpdate = process.argv.includes('--widget-update');
 const testPlugins = process.argv.includes('--plugins');
+const testWebMcp = process.argv.includes('--webmcp');
 const quantumFixture = process.env.AVOGADRO_FCHK_FIXTURE;
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(tmpdir(), 'avogadro-browser-'));
@@ -19,6 +20,7 @@ const browser = spawn(process.env.CHROME_BINARY || 'google-chrome', [
   '--headless', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-pipe',
   '--disable-background-networking', '--disable-sync', '--no-first-run',
   `--user-data-dir=${profile}`, '--enable-unsafe-swiftshader', '--use-angle=swiftshader',
+  ...(testWebMcp ? ['--enable-features=WebMCP,WebMCPTesting'] : []),
   'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let sequence = 0, buffer = '', session;
@@ -109,6 +111,26 @@ try {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...rect, button: 'left', clickCount: 1 });
   await wait(`document.querySelector('#counts').textContent.startsWith('5 atoms')`, 10000);
   checks.push('Draw carbon and automatic hydrogens');
+  const inspect = () => evaluate(`(async () => {
+    const context = document.modelContext;
+    const tool = (await context.getTools()).find(tool => tool.name === 'inspect_molecule');
+    const result = await context.executeTool(tool, {});
+    return typeof result === 'string' ? JSON.parse(result) : result;
+  })()`);
+  if (testWebMcp) {
+    const filesBeforeInspection = await readdir(output);
+    const molecule = await inspect();
+    assert.equal(molecule.modified, true);
+    assert.equal(molecule.atomCount, 5);
+    assert.equal(molecule.bondCount, 4);
+    assert.deepEqual(molecule.atoms.map(atom => atom.atomicNumber), [6, 1, 1, 1, 1]);
+    assert.deepEqual(molecule.bonds.map(({ begin, end, order }) => [
+      Math.min(begin, end), Math.max(begin, end), order,
+    ]).sort((a, b) => a[1] - b[1]), [[0, 1, 1], [0, 2, 1], [0, 3, 1], [0, 4, 1]]);
+    assert.deepEqual(await readdir(output), filesBeforeInspection);
+    assert.match(await evaluate("document.querySelector('#document-name').textContent"), /\*$/);
+    checks.push('WebMCP reads the live unsaved atom and bond graph without a download');
+  }
   if (testWidgetUpdate) {
     await wait('viewportDrawCalls > 0', 5000);
     const idleDrawCalls = await evaluate(`new Promise((resolve, reject) => {
@@ -142,6 +164,8 @@ try {
   checks.push('Unsaved document navigation protection');
   await screenshot('draw.png');
   await click('undo'); await wait(`document.querySelector('#counts').textContent.startsWith('0 atoms')`, 5000);
+  if (testWebMcp)
+    assert.deepEqual(await inspect(), { atomCount: 0, bondCount: 0, modified: false, atoms: [], bonds: [] });
   await click('redo'); await wait(`document.querySelector('#counts').textContent.startsWith('5 atoms')`, 5000);
   checks.push('Undo/redo through HTML controls');
   await click('new'); await wait(`document.querySelector('#discard-dialog').open`, 5000);

@@ -78,6 +78,11 @@ confirmation; leaving the page also requests browser confirmation. Only a CJSON
 download clears the unsaved marker because other formats may omit properties.
 A download request cannot prove that the user retained the file.
 
+In browsers with WebMCP enabled, Avogadro registers the read-only
+`inspect_molecule` tool. It returns atomic numbers, bond orders with zero-based
+atom indices, counts, and the unsaved status of the live molecule. Inspection
+runs in the tab and leaves the editor's undo stack and unsaved status intact.
+
 ## Build an application with the WASM package
 
 The package contains the compiled Avogadro runtime and an example HTML/JavaScript
