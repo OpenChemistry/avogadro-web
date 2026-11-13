@@ -37,10 +37,12 @@ public:
   void undo();
   void redo();
   void resetCamera();
+  void zoom(double delta);
 signals:
   void stateChanged();
 
 private:
+  bool eventFilter(QObject* watched, QEvent* event) override;
   void replaceMolecule(std::unique_ptr<QtGui::Molecule> molecule);
   QtOpenGL::GLWidget& m_view;
   std::unique_ptr<QtGui::Molecule> m_molecule;

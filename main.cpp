@@ -57,6 +57,10 @@ void resetCamera()
 {
   controller->resetCamera();
 }
+void zoom(double delta)
+{
+  controller->zoom(delta);
+}
 void markSaved()
 {
   controller->markSaved();
@@ -74,6 +78,7 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("undo", &undo);
   emscripten::function("redo", &redo);
   emscripten::function("resetCamera", &resetCamera);
+  emscripten::function("zoom", &zoom);
   emscripten::function("markSaved", &markSaved);
 }
 #endif

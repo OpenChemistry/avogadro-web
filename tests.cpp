@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QSignalSpy>
 #include <QUndoStack>
+#include <QWheelEvent>
 #include <avogadro/core/atom.h>
 #include <avogadro/core/bond.h>
 #include <avogadro/core/layermanager.h>
@@ -44,6 +45,51 @@ protected:
     tool->mouseReleaseEvent(&release);
   }
 };
+
+TEST_F(WebEditorTest, WheelZoomIsGentleAndBoundedInEveryTool)
+{
+  auto& camera = view.renderer().camera();
+  const auto distance = [&]() {
+    return (camera.modelView() * camera.focus()).norm();
+  };
+  const auto scroll = [&](QPoint pixels, QPoint angle) {
+    QWheelEvent event(QPointF(320, 240), QPointF(320, 240), pixels,
+                      angle, Qt::NoButton, Qt::NoModifier,
+                      Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&view, &event);
+    EXPECT_TRUE(event.isAccepted());
+  };
+  for (const auto* tool : { "draw", "navigate", "select" }) {
+    ASSERT_TRUE(editor.setTool(tool));
+    editor.resetCamera();
+    const float initial = distance();
+    ASSERT_GT(initial, 3.0f);
+    scroll({}, QPoint(0, 120));
+    EXPECT_NEAR(distance() / initial, 1.02f, 0.0001f);
+
+    const float beforePixel = distance();
+    scroll(QPoint(0, -120), QPoint(0, -120));
+    EXPECT_NEAR(distance() / beforePixel, 0.98f, 0.0001f);
+
+    const float beforeTiny = distance();
+    scroll(QPoint(0, 1), {});
+    EXPECT_GT(distance(), beforeTiny);
+    EXPECT_LT(distance() / beforeTiny, 1.001f);
+
+    const float beforeLarge = distance();
+    scroll(QPoint(0, 10000), {});
+    EXPECT_NEAR(distance() / beforeLarge, 1.05f, 0.0001f);
+    const float beforeReverse = distance();
+    scroll(QPoint(0, -10000), {});
+    EXPECT_NEAR(distance() / beforeReverse, 0.95f, 0.0001f);
+
+    const float beforeHorizontal = distance();
+    scroll(QPoint(120, 0), QPoint(0, 120));
+    EXPECT_FLOAT_EQ(distance(), beforeHorizontal);
+    scroll({}, {});
+    EXPECT_FLOAT_EQ(distance(), beforeHorizontal);
+  }
+}
 
 TEST_F(WebEditorTest, DefaultsAndWidgetIndependentOptions)
 {

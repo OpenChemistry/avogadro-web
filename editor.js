@@ -116,6 +116,26 @@ try {
       onExit: details => { $('controls').disabled = true; message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); } },
     print: text => console.info(text), printErr: text => console.error(text),
   });
+  // Capture wheel events before Qt sees them. Combine the events Chrome
+  // delivers within a frame and cap the resulting camera movement.
+  const viewport = $('viewport');
+  let wheelPixels = 0;
+  let wheelFrame = 0;
+  viewport.addEventListener('wheel', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const unit = event.deltaMode;
+    const pixels = event.deltaY * (unit === 1 ? 16 : unit === 2 ? viewport.clientHeight : 1);
+    if (!Number.isFinite(pixels) || pixels === 0) return;
+    wheelPixels += pixels;
+    if (wheelFrame) return;
+    wheelFrame = requestAnimationFrame(() => {
+      const delta = -wheelPixels / 120;
+      wheelPixels = 0;
+      wheelFrame = 0;
+      instance.zoom(delta);
+    });
+  }, { capture: true, passive: false });
   editor = new AvogadroEditor(instance);
   editor.addEventListener('statechange', event => render(event.detail));
   new ResizeObserver(() => instance.qtResizeContainerElement($('viewport'))).observe($('viewport'));

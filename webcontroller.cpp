@@ -3,6 +3,8 @@
 
 #include <QJsonArray>
 #include <QUndoStack>
+#include <QWheelEvent>
+#include <algorithm>
 #include <avogadro/core/atom.h>
 #include <avogadro/core/layermanager.h>
 #include <avogadro/io/fileformatmanager.h>
@@ -81,11 +83,39 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
   m_view.setDefaultTool(m_tools["navigate"]);
   newMolecule();
   setTool("draw");
+  m_view.installEventFilter(this);
 }
 
 WebController::~WebController()
 {
+  m_view.removeEventFilter(this);
   m_view.setMolecule(nullptr);
+}
+
+bool WebController::eventFilter(QObject* watched, QEvent* event)
+{
+  if (watched != &m_view || event->type() != QEvent::Wheel)
+    return QObject::eventFilter(watched, event);
+
+  const auto* wheel = static_cast<QWheelEvent*>(event);
+  // Browser wheel input can contain hundreds of pixels per event. The
+  // desktop Navigator treats each pixel as a zoom unit (2% of distance).
+  // Keep fractional trackpad motion, use a gentle 2% per wheel notch, and
+  // limit accelerated events to 5% so one scroll cannot lose the molecule.
+  const float delta = wheel->pixelDelta().isNull()
+                        ? wheel->angleDelta().y() / 120.0f
+                        : wheel->pixelDelta().y() / 120.0f;
+  if (delta != 0.0f)
+    m_tools["navigate"]->handleCommand(
+      "zoomScene", { { "delta", -std::clamp(delta, -2.5f, 2.5f) } });
+  event->accept();
+  return true;
+}
+
+void WebController::zoom(double delta)
+{
+  m_tools["navigate"]->handleCommand(
+    "zoomScene", { { "delta", std::clamp(delta, -0.5, 0.5) } });
 }
 
 QtGui::Molecule& WebController::molecule() const
