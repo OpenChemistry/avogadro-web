@@ -261,13 +261,20 @@ try {
     await style('BallStick', false);
     const empty = await viewportImage();
     const renderings = new Set([empty]);
-    for (const id of ['BallStick', 'Licorice', 'VanDerWaals', 'Wireframe', 'Label']) {
+    for (const id of ['BallStick', 'Licorice', 'VanDerWaals', 'Wireframe']) {
       await style(id, true);
       renderings.add(await viewportImage(`style-${id}.png`));
       await style(id, false);
       assert.equal(await viewportImage(), empty, `${id} stops drawing when disabled`);
     }
-    assert.equal(renderings.size, 6, 'Each style produces a different viewport image');
+    assert.equal(renderings.size, 5, 'Each molecular style produces a different viewport image');
+    await style('BallStick', true);
+    const unlabeled = await viewportImage();
+    await style('Label', true);
+    assert.notEqual(await viewportImage('style-Label.png'), unlabeled, 'Labels are visible over atoms');
+    await style('Label', false);
+    assert.equal(await viewportImage(), unlabeled, 'Disabling Labels restores the unlabelled molecule');
+    await style('BallStick', false);
     await style('Licorice', true);
     const styled = await exportCjson();
     assert.deepEqual(styled.layer.enable.Licorice, [true]);
