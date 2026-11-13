@@ -43,6 +43,7 @@ public:
   void undo();
   void redo();
   void resetCamera();
+  bool setTheme(const QString& theme);
   void zoom(double delta);
 signals:
   void stateChanged();

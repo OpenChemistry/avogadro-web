@@ -103,6 +103,10 @@ void zoom(double delta)
 {
   controller->zoom(delta);
 }
+bool setTheme(const std::string& theme)
+{
+  return controller->setTheme(QString::fromStdString(theme));
+}
 void markSaved()
 {
   controller->markSaved();
@@ -128,6 +132,7 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("undo", &undo);
   emscripten::function("redo", &redo);
   emscripten::function("resetCamera", &resetCamera);
+  emscripten::function("setTheme", &setTheme);
   emscripten::function("zoom", &zoom);
   emscripten::function("markSaved", &markSaved);
 }

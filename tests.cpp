@@ -77,6 +77,24 @@ TEST_F(WebEditorTest, OpenRestoresAvailableStylesOrFallsBackToBallAndStick)
   EXPECT_FALSE(enabled("Wireframe"));
 }
 
+TEST_F(WebEditorTest, ThemeChangesPreserveDocumentAndHistory)
+{
+  clickAtom();
+  const auto before = editor.state();
+  const auto molecule = editor.exportMolecule("cjson");
+  ASSERT_TRUE(editor.setTheme("light"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 238);
+  EXPECT_EQ(editor.state(), before);
+  EXPECT_EQ(editor.exportMolecule("cjson"), molecule);
+  ASSERT_TRUE(editor.setTheme("dark"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 16);
+  EXPECT_FALSE(editor.setTheme("invalid"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 16);
+  EXPECT_EQ(editor.state(), before);
+  editor.undo();
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+}
+
 TEST_F(WebEditorTest, WheelZoomIsGentleAndBoundedInEveryTool)
 {
   auto& camera = view.renderer().camera();

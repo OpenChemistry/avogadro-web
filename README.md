@@ -7,6 +7,22 @@ molecular surfaces and orbitals. Files are processed in your browser.
 Use the included editor, or build your own interface around the same molecular
 rendering and editing runtime.
 
+## Workspace interface
+
+The editor opens in dark mode. The sun/moon control switches the interface and
+molecular canvas between dark and light, remembering the choice in this browser.
+Document actions and export are in the top bar; molecular tools are on the left.
+The right inspector contains Tool, Display, and Calculate tabs. Close it for more
+canvas space, or reopen it with **Inspector**. Below 1000px it becomes a drawer.
+The inspector tabs support arrow keys, Home and End; Escape closes the export
+popover or compact inspector. Tool buttons have labels and hover/focus tooltips.
+
+The interface uses the capabilities advertised by its runtime. Older CI packages
+with only Draw, Navigate and Select still work, but retain their fixed dark canvas
+and explain unavailable display/calculation controls. Build this source with a
+plugin-enabled Avogadro installation for all tools, calculations, and canvas
+color switching. Theme changes never enter molecular undo history.
+
 ## Get started
 
 1. [Download the WASM package](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip).

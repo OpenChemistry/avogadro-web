@@ -223,7 +223,16 @@ try {
         const {x, y, width, height} = document.querySelector('#viewport').getBoundingClientRect();
         return {x, y, width, height, scale: 1};
       })()`);
-      const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
+      // WASM redraws asynchronously. Compare settled frames rather than a
+      // possibly queued repaint, especially under software rendering.
+      let data, previous, stable = 0;
+      for (let attempt = 0; attempt < 30 && stable < 2; ++attempt) {
+        ({ data } = await send('Page.captureScreenshot', { format: 'png', clip }));
+        stable = data === previous ? stable + 1 : 0;
+        previous = data;
+        await delay(100);
+      }
+      assert.equal(stable, 2, 'Viewport rendering settles before comparison');
       if (name) await writeFile(join(output, name), Buffer.from(data, 'base64'));
       return createHash('sha256').update(data).digest('hex');
     };
@@ -259,21 +268,21 @@ try {
     checks.push('Tool and display controls discovered from WASM factories');
 
     await style('BallStick', false);
-    const empty = await viewportImage();
+    const empty = await viewportImage('styles-empty.png');
     const renderings = new Set([empty]);
     for (const id of ['BallStick', 'Licorice', 'VanDerWaals', 'Wireframe']) {
       await style(id, true);
       renderings.add(await viewportImage(`style-${id}.png`));
       await style(id, false);
-      assert.equal(await viewportImage(), empty, `${id} stops drawing when disabled`);
+      assert.equal(await viewportImage(`style-${id}-disabled.png`), empty, `${id} stops drawing when disabled`);
     }
     assert.equal(renderings.size, 5, 'Each molecular style produces a different viewport image');
     await style('BallStick', true);
-    const unlabeled = await viewportImage();
+    const unlabeled = await viewportImage('unlabeled.png');
     await style('Label', true);
     assert.notEqual(await viewportImage('style-Label.png'), unlabeled, 'Labels are visible over atoms');
     await style('Label', false);
-    assert.equal(await viewportImage(), unlabeled, 'Disabling Labels restores the unlabelled molecule');
+    assert.equal(await viewportImage('labels-disabled.png'), unlabeled, 'Disabling Labels restores the unlabelled molecule');
     await style('BallStick', false);
     await style('Licorice', true);
     const styled = await exportCjson();

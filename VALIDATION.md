@@ -1,3 +1,87 @@
+# Workspace redesign validation — 14 November 2026
+
+Implemented in an isolated worktree on `codex/polished-workspace`, based on
+`timvdm/master` at `f8987cf`. The original checkout and its uncommitted
+restructuring were preserved. Nothing was pushed or deployed.
+
+The first pass used the unchanged CI artifact from run `43511417867`:
+Chromium's 11 core checks, Firefox's eight checks, three startup failure cases,
+and seven workspace UI checks passed. That artifact only exposes the three
+original tools and no canvas-theme binding.
+
+At the user's subsequent request, a new runtime was built against the existing
+plugin-enabled WASM Avogadro installation at `/tmp/avo-web-plugins/prefix`.
+Avogadrolibs itself was reused, not rebuilt in this task. The new runtime uses
+Qt 6.11.1 multithreaded WASM and Emscripten 4.0.7, with browser test hooks enabled.
+The missing locked Emscripten JavaScript dependencies were restored with
+`npm ci --omit=dev --ignore-scripts --no-audit --no-fund` in the SDK directory.
+
+Results for the new runtime:
+
+- Native controller: 11 GoogleTest cases passed, including theme changes leaving
+  document contents, modified state, and undo history unchanged.
+- Chromium: 24 checks passed, covering all nine tools, five molecular display
+  styles plus surface rendering, UFF optimization and undo, AutoOptimize,
+  three molecular surfaces, FCHK/Molden orbitals, electron density, imported
+  cube rendering, file handling, camera input and external QWidget redraws.
+- Firefox: eight core editing/import/export checks passed on an isolated Xvfb
+  display. Headless Firefox lacked WebGL2; the isolated-display run succeeded.
+- Workspace UI: eight checks passed, including runtime capabilities, persistent
+  theme selection, unchanged document state, responsive panels, keyboard tabs,
+  runtime exit, loading and startup errors.
+- Screenshots reviewed in dark and light at 1440×900, 1024×768 and 768×1024,
+  with empty/populated views, labels, loading, failures and confirmation dialogs.
+- Pixel comparisons initially captured queued redraws too early. The rendering
+  test now requires three consecutive identical frames before comparing images.
+
+Build and test commands (from `/home/timvdm/openchemistry`):
+
+```sh
+source /home/timvdm/emsdk/emsdk_env.sh
+export EM_CACHE=/tmp/avogadro-ui-em-cache
+/home/timvdm/Qt/6.11.1/wasm_multithread/bin/qt-cmake \
+  -S /home/timvdm/openchemistry/avogadro-web-ui -B /tmp/avogadro-ui-build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DAvogadroLibs_DIR=/tmp/avo-web-plugins/prefix/lib/cmake/avogadrolibs \
+  -DEigen3_DIR=/home/timvdm/openchemistry/build-web/prefix/share/eigen3/cmake \
+  -DQT_HOST_PATH=/home/timvdm/Qt/6.11.1/gcc_64 -DENABLE_TESTING=ON
+cmake --build /tmp/avogadro-ui-build --parallel 4
+cmake --install /tmp/avogadro-ui-build \
+  --prefix /home/timvdm/openchemistry/avogadro-web-ui/build/stage
+
+cmake -S avogadro-web-ui -B /tmp/avogadro-ui-native -G Ninja \
+  -DAvogadroLibs_DIR=/tmp/avo-review/static-prefix/lib/cmake/avogadrolibs \
+  '-DCMAKE_PREFIX_PATH=/home/timvdm/Qt/6.11.1/gcc_64;/home/timvdm/openchemistry/build-native/prefix' \
+  -DENABLE_TESTING=ON
+cmake --build /tmp/avogadro-ui-native --parallel 4
+ctest --test-dir /tmp/avogadro-ui-native --output-on-failure
+
+AVOGADRO_FCHK_FIXTURE=/home/timvdm/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk \
+  node avogadro-web-ui/tests/browser-smoke.mjs http://127.0.0.1:8767 \
+  /tmp/avogadro-ui-evidence/full-chromium-settled --plugins --widget-update
+
+export PUPPETEER_MODULE=/tmp/avogadro-ui-test-deps/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js
+DISPLAY=:97 node avogadro-web-ui/tests/firefox-smoke.mjs \
+  http://127.0.0.1:8767 /tmp/avogadro-ui-evidence/full-firefox
+AVOGADRO_UI_FIXTURE=/tmp/avogadro-caffeine-2519.sdf \
+  node avogadro-web-ui/tests/ui-smoke.mjs http://127.0.0.1:8767 \
+  /tmp/avogadro-ui-evidence/full-ui --full-runtime
+node avogadro-web-ui/tests/startup-failures.mjs \
+  /home/timvdm/openchemistry/avogadro-web-ui/build/stage/share/avogadro-web
+node --check avogadro-web-ui/editor.js
+node --check avogadro-web-ui/tests/ui-smoke.mjs
+node --check avogadro-web-ui/tests/browser-smoke.mjs
+git -C avogadro-web-ui diff --check
+```
+
+Local artifacts are in `build/stage/share/avogadro-web`; screenshots and test
+results are in `build/evidence`. Both directories are ignored by Git.
+The full native desktop suite and sanitizers were not rerun for this UI change.
+The runtime includes browser-supported features; Python and subprocess plugins
+remain outside the WASM profile.
+
+---
+
 # Implementation validation — 25 September 2026
 
 This is the historical validation record from before extraction into

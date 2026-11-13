@@ -1,78 +1,335 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Avogadro · Molecule editor</title>
-  <link rel="icon" href="avogadro2.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="editor.css">
-</head>
-<body>
-  <header><strong><img src="avogadro2.svg" alt="">Avogadro</strong><span>Molecule editor</span><span id="document-name">Untitled</span></header>
-  <main>
-    <aside aria-label="Editor controls">
-      <fieldset id="controls" disabled>
-        <legend>Molecule</legend>
-        <div class="row"><button id="new">New</button><button id="open">Open…</button></div>
-        <input type="file" id="file" accept=".cjson,.mol,.sdf,.xyz,.pdb,.fchk,.molden,.cube" hidden>
-        <label>Download format<select id="format"><option value="cjson">CJSON</option><option value="mol">MOL</option><option value="sdf">SDF</option><option value="xyz">XYZ</option></select></label>
-        <button id="download">Download</button>
-        <hr>
-        <div id="tools" class="tools" role="group" aria-label="Tools"></div>
-        <section id="draw-options" aria-label="Draw options">
-          <label>Element<select id="element"></select></label>
-          <label>Bond<select id="bond"><option value="0">Automatic</option><option value="1">Single</option><option value="2">Double</option><option value="3">Triple</option></select></label>
-          <label class="check"><input type="checkbox" id="hydrogens" checked>Adjust hydrogens</label>
-        </section>
-        <section id="align-options" aria-label="Align options" hidden>
-          <label>Axis<select id="align-axis"><option>x</option><option>y</option><option>z</option></select></label>
-          <button id="align">Align picked atoms</button>
-        </section>
-        <form id="label-options" aria-label="Edit atom label" hidden>
-          <label>Atom label<input id="atom-label" type="text" autocomplete="off"></label>
-          <button type="submit">Apply label</button>
-        </form>
-        <details id="calculations" hidden>
-          <summary>Calculations</summary>
-          <label id="force-field-label">Force field<select id="force-field"><option value="UFF">UFF</option><option value="LJ">Lennard-Jones</option></select></label>
-          <button id="optimize">Optimize Geometry</button>
-          <label id="surface-label">Surface<select id="surface-type">
-            <option value="renderVDW">Van der Waals</option>
-            <option value="renderSolventAccessible">Solvent accessible</option>
-            <option value="renderSolventExcluded">Solvent excluded</option>
-            <option value="renderOrbital">Molecular orbital</option>
-            <option value="renderElectronDensity">Electron density</option>
-            <option value="renderCube">Imported cube</option>
-          </select></label>
-          <label id="orbital-label" hidden>Orbital<select id="orbital"></select></label>
-          <button id="render-surface">Render surface</button>
-          <p id="calculation-status" role="status"></p>
-        </details>
-        <p id="tool-help" hidden></p>
-        <details>
-          <summary>Display styles</summary>
-          <div id="display-styles"></div>
-        </details>
-        <div class="row"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button></div>
-        <button id="delete">Delete selected atoms</button>
-        <button id="reset">Fit molecule</button>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#151a21" />
+    <title>Avogadro · Molecule editor</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("avogadro-theme") === "light" ? "light" : "dark";
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="editor.css" />
+  </head>
+  <body>
+    <header class="document-bar">
+      <a class="brand" href="./" aria-label="Avogadro home"
+        ><img src="avogadro2.svg" alt="" width="32" height="32" /><span>Avogadro<small>MOLECULE EDITOR</small></span></a
+      >
+      <div class="document-title">
+        <span id="document-name">Untitled</span
+        ><span id="document-state">New molecule</span>
+      </div>
+      <fieldset id="document-controls" disabled aria-label="Document actions">
+        <button id="new" class="quiet" data-icon="new">New</button
+        ><button id="open" class="quiet" data-icon="open">Open</button>
+        <input
+          type="file"
+          id="file"
+          accept=".cjson,.mol,.sdf,.xyz,.fchk,.molden,.cube"
+          hidden
+        />
+        <div class="history">
+          <button
+            id="undo"
+            class="icon-button"
+            aria-label="Undo"
+            title="Undo (Ctrl / ⌘ Z)"
+            data-icon="undo"
+            disabled
+          ></button
+          ><button
+            id="redo"
+            class="icon-button"
+            aria-label="Redo"
+            title="Redo (Ctrl / ⌘ Shift Z)"
+            data-icon="redo"
+            disabled
+          ></button>
+        </div>
+        <div class="export-wrapper">
+          <button
+            id="export-toggle"
+            class="primary"
+            aria-expanded="false"
+            aria-controls="export-menu"
+            data-icon="download"
+          >
+            Export
+          </button>
+          <section
+            id="export-menu"
+            class="popover"
+            hidden
+            aria-label="Export molecule"
+          >
+            <h2>Export molecule</h2>
+            <label
+              >File format<select id="format">
+                <option value="cjson">Avogadro · CJSON</option>
+                <option value="mol">MDL Molfile · MOL</option>
+                <option value="sdf">Structure data · SDF</option>
+                <option value="xyz">Coordinates · XYZ</option>
+              </select></label
+            >
+            <p class="description">
+              CJSON preserves Avogadro data. Other formats may omit properties.
+            </p>
+            <button id="download" class="primary" data-icon="download">
+              Download file
+            </button>
+          </section>
+        </div>
       </fieldset>
-      <p id="help">Draw: click to add an atom, drag to create a bond, right-click to remove. Navigate: drag to rotate, right-drag to pan, scroll to zoom.</p>
-      <p>Files stay in your browser. CJSON preserves Avogadro data; other formats may omit properties.</p>
-    </aside>
-    <section id="workspace" aria-label="Molecular viewport">
-      <div id="viewport" tabindex="0"></div>
-      <div id="loading" role="status">Loading Avogadro…</div>
-    </section>
-  </main>
-  <footer><span id="counts">0 atoms · 0 bonds</span><span id="status" role="status" aria-live="polite"></span></footer>
-  <dialog id="discard-dialog" aria-labelledby="discard-title">
-    <h2 id="discard-title">Discard unsaved changes?</h2>
-    <p>Download your molecule first if you want to keep it.</p>
-    <form method="dialog"><button value="cancel" autofocus>Keep editing</button><button value="discard">Discard changes</button></form>
-  </dialog>
-  <script src="avogadro-web.js"></script>
-  <script src="qtloader.js"></script>
-  <script type="module" src="editor.js"></script>
-</body>
+      <button
+        id="theme"
+        class="icon-button"
+        aria-label="Switch to light mode"
+        title="Switch to light mode"
+      ></button>
+    </header>
+    <fieldset id="controls" disabled aria-label="Molecule editor">
+      <main>
+        <nav class="tool-rail" aria-label="Molecular tools">
+          <div class="rail-label">TOOLS</div>
+          <div id="tools" role="group" aria-label="Tools"></div>
+          <div class="rail-bottom">
+            <button
+              id="delete"
+              class="icon-button"
+              aria-label="Delete selected atoms"
+              title="Delete selected atoms"
+              data-icon="delete"
+            ></button>
+          </div>
+        </nav>
+        <section id="workspace" aria-label="Molecular viewport">
+          <div class="canvas-toolbar">
+            <span class="canvas-label"
+              ><span class="live-dot"></span>MOLECULAR WORKSPACE</span
+            >
+            <div>
+              <button id="reset" class="canvas-button" data-icon="fit">
+                Fit molecule</button
+              ><button
+                id="inspector-toggle"
+                class="canvas-button"
+                aria-controls="inspector"
+                aria-expanded="true"
+                data-icon="panel"
+              >
+                Inspector
+              </button>
+            </div>
+          </div>
+          <div
+            id="viewport"
+            tabindex="0"
+            aria-label="Interactive molecule canvas"
+          ></div>
+          <div id="empty-state" hidden>
+            <div class="empty-mark">C</div>
+            <h1>A little chemistry starts here.</h1>
+            <p>
+              Click anywhere to place your first atom.<br />Drag between atoms
+              to create a bond.
+            </p>
+            <span>DRAW A MOLECULE · OR OPEN A FILE</span>
+          </div>
+          <div id="canvas-help">
+            Click to add an atom <span>·</span> Drag to create a bond
+            <span>·</span> Scroll to zoom
+          </div>
+          <div id="loading" role="status">
+            <div class="loading-card">
+              <div class="spinner"></div>
+              <h1 id="loading-title">Preparing your workspace</h1>
+              <p id="loading-message">Loading Avogadro…</p>
+            </div>
+          </div>
+        </section>
+        <aside id="inspector" aria-label="Inspector">
+          <div class="inspector-heading">
+            <span>INSPECTOR</span
+            ><button
+              id="inspector-close"
+              class="icon-button"
+              aria-label="Close inspector"
+              data-icon="close"
+            ></button>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Inspector sections">
+            <button
+              id="tab-tool"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-tool"
+              tabindex="0"
+            >
+              Tool</button
+            ><button
+              id="tab-display"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-display"
+              tabindex="-1"
+            >
+              Display</button
+            ><button
+              id="tab-calculations"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-calculations"
+              tabindex="-1"
+            >
+              Calculate
+            </button>
+          </div>
+          <div class="inspector-content">
+            <section id="panel-tool" role="tabpanel" aria-labelledby="tab-tool">
+              <div class="section-eyebrow">ACTIVE TOOL</div>
+              <h2 id="active-tool">Draw</h2>
+              <p id="tool-help" class="description"></p>
+              <section id="draw-options" aria-label="Draw options">
+                <label>Element<select id="element"></select></label>
+                <label
+                  >Bond<select id="bond">
+                    <option value="0">Automatic</option>
+                    <option value="1">Single</option>
+                    <option value="2">Double</option>
+                    <option value="3">Triple</option>
+                  </select></label
+                >
+                <label class="check"
+                  ><input type="checkbox" id="hydrogens" checked />Adjust
+                  hydrogens</label
+                >
+              </section>
+              <section id="align-options" aria-label="Align options" hidden>
+                <label
+                  >Axis<select id="align-axis">
+                    <option>x</option>
+                    <option>y</option>
+                    <option>z</option>
+                  </select></label
+                >
+                <button id="align">Align picked atoms</button>
+              </section>
+              <form id="label-options" aria-label="Edit atom label" hidden>
+                <label
+                  >Atom label<input
+                    id="atom-label"
+                    type="text"
+                    autocomplete="off"
+                /></label>
+                <button type="submit">Apply label</button>
+              </form>
+              <section id="auto-opt-options" aria-label="AutoOptimize" hidden>
+                <label
+                  >Force field<select id="auto-opt-method">
+                    <option value="UFF">UFF</option>
+                    <option value="LJ">Lennard-Jones</option>
+                  </select></label
+                >
+                <button id="auto-opt">Start AutoOptimize</button>
+              </section>
+            </section>
+            <section
+              id="panel-display"
+              role="tabpanel"
+              aria-labelledby="tab-display"
+              hidden
+            >
+              <div class="section-eyebrow">APPEARANCE</div>
+              <h2>Display styles</h2>
+              <p class="description">
+                Combine representations to see your molecule from a new
+                perspective.
+              </p>
+              <div id="display-styles"></div>
+              <p id="display-unavailable" class="description" hidden>
+                This build uses the default ball-and-stick representation.
+                Additional display styles require a newer runtime.
+              </p>
+            </section>
+            <section
+              id="panel-calculations"
+              role="tabpanel"
+              aria-labelledby="tab-calculations"
+              hidden
+            >
+              <section id="calculations" hidden>
+                <h2>Calculations</h2>
+                <p class="description">
+                  Refine geometry and explore molecular surfaces.
+                </p>
+                <label id="force-field-label"
+                  >Force field<select id="force-field">
+                    <option value="UFF">UFF</option>
+                    <option value="LJ">Lennard-Jones</option>
+                  </select></label
+                >
+                <button id="optimize">Optimize Geometry</button>
+                <label id="surface-label"
+                  >Surface<select id="surface-type">
+                    <option value="renderVDW">Van der Waals</option>
+                    <option value="renderSolventAccessible">
+                      Solvent accessible
+                    </option>
+                    <option value="renderSolventExcluded">
+                      Solvent excluded
+                    </option>
+                    <option value="renderOrbital">Molecular orbital</option>
+                    <option value="renderElectronDensity">
+                      Electron density
+                    </option>
+                    <option value="renderCube">Imported cube</option>
+                  </select></label
+                >
+                <label id="orbital-label" hidden
+                  >Orbital<select id="orbital"></select
+                ></label>
+                <button id="render-surface">Render surface</button>
+                <p id="calculation-status" role="status"></p>
+              </section>
+              <p id="calculation-unavailable" class="description" hidden>
+                Calculations are unavailable in this build.
+              </p>
+            </section>
+          </div>
+          <div class="inspector-note">
+            <span class="privacy-icon" data-icon="shield"></span>
+            <p>
+              Your molecules stay yours.<br /><span
+                >Files are processed in your browser.</span
+              >
+            </p>
+          </div>
+        </aside>
+      </main>
+    </fieldset>
+    <footer>
+      <span class="status-indicator"></span
+      ><span id="counts">0 atoms · 0 bonds</span
+      ><span id="status" role="status" aria-live="polite"></span
+      ><span class="footer-brand">AVOGADRO WEB</span>
+    </footer>
+    <dialog id="discard-dialog" aria-labelledby="discard-title">
+      <div class="section-eyebrow">UNSAVED MOLECULE</div>
+      <h2 id="discard-title">Keep your work?</h2>
+      <p>
+        Download your molecule first if you want to keep it. Discarding will
+        remove your unsaved changes.
+      </p>
+      <form method="dialog">
+        <button value="cancel" autofocus>Keep editing</button
+        ><button class="danger" value="discard">Discard changes</button>
+      </form>
+    </dialog>
+    <script src="avogadro-web.js"></script>
+    <script src="qtloader.js"></script>
+    <script type="module" src="editor.js"></script>
+  </body>
 </html>

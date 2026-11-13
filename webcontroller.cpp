@@ -431,6 +431,17 @@ void WebController::redo()
   m_molecule->undoMolecule()->undoStack().redo();
   m_view.updateScene();
 }
+bool WebController::setTheme(const QString& theme)
+{
+  if (theme != "dark" && theme != "light")
+    return false;
+  const Vector4ub color = theme == "dark" ? Vector4ub(16, 20, 26, 255)
+                                         : Vector4ub(238, 241, 245, 255);
+  m_view.renderer().scene().setBackgroundColor(color);
+  m_view.update();
+  return true;
+}
+
 void WebController::resetCamera()
 {
   m_view.resetCamera();
