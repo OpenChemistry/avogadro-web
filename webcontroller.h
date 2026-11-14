@@ -50,6 +50,7 @@ signals:
 
 private:
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void enableDisplayStyles(const QStringList& names);
   void addCalculator(const QString& id);
   void finishCalculation(const QString& message, bool error);
   void replaceMolecule(std::unique_ptr<QtGui::Molecule> molecule);

@@ -74,13 +74,7 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
     m_tools.insert(toolAliases.value(id, id), tool);
     m_view.addTool(tool);
     connect(tool, &QtGui::ToolPlugin::requestActiveDisplayTypes, this,
-            [this](const QStringList& names) {
-              for (auto* style : m_view.sceneModel().scenePlugins()) {
-                if (names.contains(style->name()) ||
-                    names.contains(style->objectName()))
-                  setDisplayStyle(style->objectName(), true);
-              }
-            });
+            &WebController::enableDisplayStyles);
   }
   for (const auto& id : toolAliases) {
     if (!m_tools.contains(id))
@@ -147,9 +141,7 @@ void WebController::addCalculator(const QString& id)
               finishCalculation(message, true);
           });
   connect(extension, &QtGui::ExtensionPlugin::requestActiveDisplayTypes, this,
-          [this](const QStringList&) {
-            setDisplayStyle("SurfaceRender", true);
-          });
+          &WebController::enableDisplayStyles);
 }
 
 void WebController::finishCalculation(const QString& message, bool error)
@@ -263,6 +255,14 @@ bool WebController::setTool(const QString& name)
   m_tool = name;
   emit stateChanged();
   return true;
+}
+
+void WebController::enableDisplayStyles(const QStringList& names)
+{
+  for (auto* style : m_view.sceneModel().scenePlugins()) {
+    if (names.contains(style->name()) || names.contains(style->objectName()))
+      setDisplayStyle(style->objectName(), true);
+  }
 }
 
 bool WebController::setDisplayStyle(const QString& id, bool enabled)
