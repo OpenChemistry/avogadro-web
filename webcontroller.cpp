@@ -19,6 +19,7 @@
 #include <avogadro/qtplugins/pluginmanager.h>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace Avogadro::Web {
 namespace {
@@ -102,6 +103,7 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
     // Shut down the plugin's workers while their molecule is still alive.
     // A fresh instance cannot receive results from the expired command.
     extension->disconnect(this);
+    extension->setMolecule(nullptr);
     delete extension;
     addCalculator(id);
     if (auto* replacement = m_calculators.value(id))
@@ -165,6 +167,7 @@ WebController::~WebController()
   m_view.removeEventFilter(this);
   for (auto* extension : m_calculators) {
     extension->disconnect(this);
+    extension->setMolecule(nullptr);
     delete extension;
   }
   m_view.setMolecule(nullptr);
@@ -349,8 +352,16 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
   for (auto* extension : m_calculators)
     extension->setMolecule(m_molecule.get());
   m_calculationMessage.clear();
-  if (m_molecule->layerInfo()->enable.empty())
+  const auto styles = m_view.sceneModel().scenePlugins();
+  if (std::none_of(styles.begin(), styles.end(),
+                   [](const auto* style) { return style->isEnabled(); })) {
     setDisplayStyle("BallStick", true);
+    const auto& document = std::as_const(*m_molecule);
+    if (document.unitCell())
+      setDisplayStyle("CrystalScene", true);
+    if (document.residueCount() > 0)
+      setDisplayStyle("Cartoons", true);
+  }
   auto& stack = m_molecule->undoMolecule()->undoStack();
   stack.clear();
   stack.setClean();
@@ -377,7 +388,7 @@ QJsonObject WebController::loadMolecule(const QString& text,
   const QString format = formatName.toLower();
   if (m_calculating || autoOptimizing())
     return failure(tr("Wait for the current calculation to finish."));
-  if (!supported(format) &&
+  if (!supported(format) && format != "pdb" &&
       !(m_calculators.contains("Surfaces") &&
         QStringList{ "fchk", "molden", "cube" }.contains(format)))
     return failure(tr("Unsupported molecule file format."));

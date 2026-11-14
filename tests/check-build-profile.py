@@ -20,7 +20,7 @@ plugins = re.findall(r'Q_IMPORT_PLUGIN\((\w+)Factory\)',
                     (libs / 'avogadro/qtplugins/avogadrostaticqtplugins.h').read_text())
 assert set(plugins) == {
     'Navigator', 'Editor', 'Selection', 'AlignTool', 'BondCentric', 'LabelEditor',
-    'Manipulator', 'MeasureTool', 'BallStick', 'Label', 'Licorice', 'VanDerWaals',
+    'Manipulator', 'MeasureTool', 'BallStick', 'Cartoons', 'CrystalScene', 'Label', 'Licorice', 'VanDerWaals',
     'Wireframe', 'AutoOpt', 'Forcefield', 'SurfaceRender', 'Surfaces', 'Orbitals',
 }, plugins
 for name in ['pythonscript', 'packagemanager', 'interfacescript', 'interfacewidget']:

@@ -40,7 +40,10 @@ them. Drag atoms with Manipulate, or pick a bond and right-drag one of its atoms
 with Bond-Centric Manipulation to change its length. Edit Labels opens an HTML
 input after you pick an atom. The display menu toggles Ball and Stick, Wireframe,
 Licorice, Van der Waals, and Labels on the active layer. CJSON saves the enabled
-styles per layer.
+styles per layer. If a file has no enabled style available in the web build,
+the editor enables Ball and Stick. It also enables Crystal Lattice when the
+molecule has a unit cell and Cartoons when it has residues. Open accepts PDB
+files for proteins and nucleic acids.
 
 With the multithreaded Qt WASM build, **Calculations** offers Optimize
 Geometry with UFF or Lennard-Jones, three molecular surfaces, and orbital

@@ -255,7 +255,7 @@ try {
     const discovered = await evaluate(`Array.from(document.querySelectorAll('[data-tool]'), button => button.dataset.tool)`);
     assert.deepEqual(discovered.sort(), ['AlignTool', 'AutoOpt', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
     const styles = await evaluate(`Array.from(document.querySelectorAll('[data-style]'), input => input.dataset.style)`);
-    assert.deepEqual(styles.sort(), ['BallStick', 'Label', 'Licorice', 'SurfaceRender', 'VanDerWaals', 'Wireframe'].sort());
+    assert.deepEqual(styles.sort(), ['BallStick', 'Cartoons', 'CrystalScene', 'Label', 'Licorice', 'SurfaceRender', 'VanDerWaals', 'Wireframe'].sort());
     checks.push('Tool and display controls discovered from WASM factories');
 
     await style('BallStick', false);
