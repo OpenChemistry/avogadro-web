@@ -7,10 +7,10 @@ It does not create the desktop main window, menus, tool panels, or file dialogs.
 
 ## Run the CI build
 
-1. Sign in to GitHub and [download the avogadro-web-wasm ZIP](https://github.com/OpenChemistry/avogadrolibs/actions/runs/43511417867/artifacts/14079587329).
-   This ZIP expires on November 27, 2026. For newer builds, open a successful run
-   from the [WASM Build workflow](https://github.com/OpenChemistry/avogadrolibs/actions/workflows/build_wasm.yml)
-   and download **avogadro-web-wasm** from its **Artifacts** section.
+1. Sign in to GitHub and open the [WASM Build workflow](https://github.com/OpenChemistry/avogadrolibs/actions/workflows/build_wasm.yml).
+   Open a recent successful run and download **avogadro-web-wasm** from its
+   **Artifacts** section. If the artifact has expired, try a newer run that
+   produced it, or build from source using the instructions below.
 2. Extract the ZIP and open a terminal in the extracted directory containing
    both `index.html` and `serve-wasm.py`. Keep the extracted files together.
 3. Start the bundled server with Python 3:
