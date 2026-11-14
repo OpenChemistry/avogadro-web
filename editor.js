@@ -121,7 +121,10 @@ function renderCalculations(state) {
       const label = index === state.homo ? ' (HOMO)' : index === state.homo + 1 ? ' (LUMO)' : '';
       orbital.add(new Option(`${index}${label}`, index));
     }
-    orbital.value = String(state.homo || 1);
+    if (state.orbitalCount > 0) {
+      const homo = Math.max(1, Math.min(state.homo, state.orbitalCount));
+      orbital.value = String(homo);
+    }
   }
 }
 
@@ -203,7 +206,11 @@ $('surface-type').onchange = () => renderCalculations(editor.state);
 $('render-surface').onclick = () => action(() => {
   const type = $('surface-type').value;
   const options = { resolution: type === 'renderOrbital' || type === 'renderElectronDensity' ? 0.25 : 0.15 };
-  if (type === 'renderOrbital') options.orbital = Number($('orbital').value);
+  if (type === 'renderOrbital') {
+    const orbital = $('orbital').value;
+    if (!orbital) throw new Error('Select a molecular orbital.');
+    options.orbital = Number(orbital);
+  }
   editor.calculate(type, options);
 }, false);
 $('label-options').onsubmit = event => {
