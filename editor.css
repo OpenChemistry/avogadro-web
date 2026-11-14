@@ -1,8 +1,9 @@
 :root { color-scheme: light; font: 15px system-ui, sans-serif; color: #183336; background: #f5f7f6; }
 * { box-sizing: border-box; }
 body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; }
-header { display: flex; align-items: baseline; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #ccd8d5; }
-header strong { font-size: 1.35rem; color: #176459; }
+header { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #ccd8d5; }
+header strong { display: inline-flex; align-items: center; gap: .45rem; font-size: 1.35rem; color: #176459; }
+header img { width: 1.6rem; height: 1.6rem; }
 #document-name { margin-left: auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 main { min-height: 0; display: grid; grid-template-columns: 240px 1fr; }
 aside { padding: 1rem; overflow: auto; border-right: 1px solid #ccd8d5; }

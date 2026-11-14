@@ -65,7 +65,7 @@ computation, and publishing are outside this milestone.
 
 ## Browser runtime and deployment
 
-Keep `index.html`, `editor.css`, `editor.js`, `qtloader.js`, `avogadro-web.js`,
+Keep `index.html`, `editor.css`, `editor.js`, `avogadro2.svg`, `qtloader.js`, `avogadro-web.js`,
 `avogadro-web.wasm`, and any generated `.data` or worker JavaScript files together.
 CMake packages the loader installed with the selected Qt kit. Gzip is generated
 when the host `gzip` utility is available. Do not mix loaders or runtimes from

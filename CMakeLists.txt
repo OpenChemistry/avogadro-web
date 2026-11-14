@@ -43,7 +43,7 @@ if(EMSCRIPTEN)
   endif()
   set_target_properties(avogadro-web PROPERTIES QT_WASM_EXPORT_NAME createAvogadroWeb)
   # qt_add_executable deploys the loader and Emscripten auxiliary files.
-  foreach(asset index.html editor.js editor.css serve-wasm.py)
+  foreach(asset index.html editor.js editor.css avogadro2.svg serve-wasm.py)
     configure_file(${asset} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset} COPYONLY)
   endforeach()
   install(FILES README.md VALIDATION.md DESTINATION share/avogadro-web)
@@ -57,7 +57,7 @@ if(EMSCRIPTEN)
   endif()
   install(DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ DESTINATION share/avogadro-web
     FILES_MATCHING PATTERN "*.js" PATTERN "*.wasm" PATTERN "*.wasm.gz"
-    PATTERN "*.data" PATTERN "index.html" PATTERN "*.css" PATTERN "serve-wasm.py")
+    PATTERN "*.data" PATTERN "index.html" PATTERN "*.css" PATTERN "avogadro2.svg" PATTERN "serve-wasm.py")
 else()
   install(TARGETS avogadro-web RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
