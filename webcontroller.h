@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QObject>
+#include <QTimer>
 #include <memory>
 
 namespace Avogadro {
@@ -49,12 +50,16 @@ signals:
 
 private:
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void addCalculator(const QString& id);
+  void finishCalculation(const QString& message, bool error);
   void replaceMolecule(std::unique_ptr<QtGui::Molecule> molecule);
   QtOpenGL::GLWidget& m_view;
   std::unique_ptr<QtGui::Molecule> m_molecule;
   std::unique_ptr<QtGui::LayerModel> m_layers;
   QMap<QString, QtGui::ToolPlugin*> m_tools;
   QMap<QString, QtGui::ExtensionPlugin*> m_calculators;
+  QTimer m_calculationTimeout;
+  QString m_activeCalculator;
   bool m_calculating = false;
   QString m_calculationMessage;
   bool m_calculationError = false;

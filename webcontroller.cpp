@@ -94,35 +94,22 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
   if (auto* autoOpt = m_tools.value("AutoOpt"))
     connect(autoOpt, SIGNAL(runningChanged()), this, SIGNAL(stateChanged()));
 
-  for (const auto& id : { "Forcefield", "Surfaces" }) {
-    auto* factory = plugins->pluginFactory<QtGui::ExtensionPluginFactory>(id);
-    if (!factory)
-      continue;
-    auto* extension = factory->createInstance(this);
-    m_calculators.insert(id, extension);
-    connect(extension, &QtGui::ExtensionPlugin::commandFinished, this,
-            [this](const QString& message, const QVariantMap& result) {
-              m_calculating = false;
-              m_calculationMessage = message;
-              if (result.contains("converged") &&
-                  !result.value("converged").toBool())
-                m_calculationMessage +=
-                  tr(" (stopped: %1)").arg(result.value("reason").toString());
-              m_calculationError = false;
-              emit stateChanged();
-            });
-    connect(extension, &QtGui::ExtensionPlugin::commandFailed, this,
-            [this](const QString& message) {
-              m_calculating = false;
-              m_calculationMessage = message;
-              m_calculationError = true;
-              emit stateChanged();
-            });
-    connect(extension, &QtGui::ExtensionPlugin::requestActiveDisplayTypes, this,
-            [this](const QStringList&) {
-              setDisplayStyle("SurfaceRender", true);
-            });
-  }
+  m_calculationTimeout.setSingleShot(true);
+  m_calculationTimeout.setInterval(120000);
+  connect(&m_calculationTimeout, &QTimer::timeout, this, [this]() {
+    const auto id = m_activeCalculator;
+    auto* extension = m_calculators.take(id);
+    // Shut down the plugin's workers while their molecule is still alive.
+    // A fresh instance cannot receive results from the expired command.
+    extension->disconnect(this);
+    delete extension;
+    addCalculator(id);
+    if (auto* replacement = m_calculators.value(id))
+      replacement->setMolecule(m_molecule.get());
+    finishCalculation(tr("The calculation did not finish in time."), true);
+  });
+  for (const auto& id : { "Forcefield", "Surfaces" })
+    addCalculator(id);
 
   auto& scene = m_view.sceneModel();
   for (auto* factory : plugins->pluginFactories<QtGui::ScenePluginFactory>())
@@ -135,11 +122,51 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
   m_view.installEventFilter(this);
 }
 
+void WebController::addCalculator(const QString& id)
+{
+  auto* factory = QtPlugins::PluginManager::instance()
+                    ->pluginFactory<QtGui::ExtensionPluginFactory>(id);
+  if (!factory)
+    return;
+  auto* extension = factory->createInstance(this);
+  m_calculators.insert(id, extension);
+  connect(extension, &QtGui::ExtensionPlugin::commandFinished, this,
+          [this, id](QString message, const QVariantMap& result) {
+            if (m_activeCalculator != id)
+              return;
+            if (result.contains("converged") &&
+                !result.value("converged").toBool())
+              message += tr(" (stopped: %1)").arg(result.value("reason").toString());
+            finishCalculation(message, false);
+          });
+  connect(extension, &QtGui::ExtensionPlugin::commandFailed, this,
+          [this, id](const QString& message) {
+            if (m_activeCalculator == id)
+              finishCalculation(message, true);
+          });
+  connect(extension, &QtGui::ExtensionPlugin::requestActiveDisplayTypes, this,
+          [this](const QStringList&) {
+            setDisplayStyle("SurfaceRender", true);
+          });
+}
+
+void WebController::finishCalculation(const QString& message, bool error)
+{
+  m_calculationTimeout.stop();
+  m_activeCalculator.clear();
+  m_calculating = false;
+  m_calculationMessage = message;
+  m_calculationError = error;
+  emit stateChanged();
+}
+
 WebController::~WebController()
 {
   m_view.removeEventFilter(this);
-  for (auto* extension : m_calculators)
-    extension->setMolecule(nullptr);
+  for (auto* extension : m_calculators) {
+    extension->disconnect(this);
+    delete extension;
+  }
   m_view.setMolecule(nullptr);
 }
 
@@ -284,25 +311,25 @@ bool WebController::calculate(const QString& command, const QVariantMap& options
   if (m_calculating || autoOptimizing() || m_molecule->atomCount() == 0 ||
       (command != "optimize" && !surfaceCommands.contains(command)))
     return false;
-  auto* extension = m_calculators.value(command == "optimize" ? "Forcefield"
-                                                               : "Surfaces");
+  const QString id = command == "optimize" ? "Forcefield" : "Surfaces";
+  auto* extension = m_calculators.value(id);
   if (!extension)
     return false;
 
+  m_activeCalculator = id;
   m_calculating = true;
   m_calculationError = false;
   m_calculationMessage = tr("Calculating…");
   if (!extension->handleCommand(command, options)) {
     // A synchronous failure may already have supplied a more specific error.
-    if (m_calculating) {
-      m_calculating = false;
-      m_calculationMessage = tr("The calculation command was rejected.");
-      m_calculationError = true;
-      emit stateChanged();
-    }
+    if (m_calculating)
+      finishCalculation(tr("The calculation command was rejected."), true);
     return false;
   }
-  emit stateChanged();
+  if (m_calculating) {
+    m_calculationTimeout.start();
+    emit stateChanged();
+  }
   return true;
 }
 
