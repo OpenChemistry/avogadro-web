@@ -64,10 +64,6 @@ bool calculate(std::string command, std::string options)
          controller->calculate(QString::fromStdString(command),
                                doc.object().toVariantMap());
 }
-bool setAutoOptimize(bool enabled, std::string method)
-{
-  return controller->setAutoOptimize(enabled, QString::fromStdString(method));
-}
 bool setDrawOptions(std::string options)
 {
   const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
@@ -124,7 +120,6 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("alignPickedAtoms", &alignPickedAtoms);
   emscripten::function("setPickedLabel", &setPickedLabel);
   emscripten::function("calculate", &calculate);
-  emscripten::function("setAutoOptimize", &setAutoOptimize);
   emscripten::function("setDrawOptions", &setDrawOptions);
   emscripten::function("loadMolecule", &load);
   emscripten::function("exportMolecule", &save);

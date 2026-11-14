@@ -253,7 +253,7 @@ try {
     await load(fixture);
     await wait(`document.querySelector('#document-name').textContent === 'tool-fixture.cjson'`, 5000);
     const discovered = await evaluate(`Array.from(document.querySelectorAll('[data-tool]'), button => button.dataset.tool)`);
-    assert.deepEqual(discovered.sort(), ['AlignTool', 'AutoOpt', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
+    assert.deepEqual(discovered.sort(), ['AlignTool', 'BondCentric', 'LabelEditor', 'Manipulator', 'MeasureTool', 'draw', 'navigate', 'select'].sort());
     const styles = await evaluate(`Array.from(document.querySelectorAll('[data-style]'), input => input.dataset.style)`);
     assert.deepEqual(styles.sort(), ['BallStick', 'Cartoons', 'CrystalScene', 'Label', 'Licorice', 'SurfaceRender', 'VanDerWaals', 'Wireframe'].sort());
     checks.push('Tool and display controls discovered from WASM factories');
@@ -366,15 +366,6 @@ try {
     await click('undo');
     assert.deepEqual(await exportCoords(), original);
     checks.push('UFF Optimize Geometry changes coordinates and undoes in one step');
-
-    await evaluate(`document.querySelector('[data-tool="AutoOpt"]').click()`);
-    await click('auto-opt');
-    await wait(`document.querySelector('#auto-opt').textContent.startsWith('Stop')`, 5000);
-    await wait(`document.querySelector('#document-name').textContent.endsWith(' *')`, 15000);
-    await click('auto-opt');
-    await wait(`document.querySelector('#auto-opt').textContent.startsWith('Start')`, 5000);
-    assert.notDeepEqual(await exportCoords(), original);
-    checks.push('AutoOptimize starts, updates coordinates, and stops');
 
     const surfaces = new Set();
     const renderSurface = async (type, image) => {

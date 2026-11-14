@@ -47,8 +47,7 @@ files for proteins and nucleic acids.
 
 With the multithreaded Qt WASM build, **Calculations** offers Optimize
 Geometry with UFF or Lennard-Jones, three molecular surfaces, and orbital
-and electron-density isosurfaces. Select **Auto Optimize** in the toolbar
-to run continuous optimization with Start and Stop. Open a Gaussian
+and electron-density isosurfaces. Open a Gaussian
 formatted checkpoint (.fchk) or Molden file for orbital calculations, or
 a Gaussian cube (.cube) to render an imported grid. Use **Display styles**
 to show or hide the resulting surface.

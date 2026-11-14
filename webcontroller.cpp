@@ -70,6 +70,8 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
                                             { "Selection", "select" } };
   for (auto* factory : plugins->pluginFactories<QtGui::ToolPluginFactory>()) {
     const auto id = factory->identifier();
+    if (id == "AutoOpt")
+      continue;
     auto* tool = factory->createInstance(&m_view);
     m_tools.insert(toolAliases.value(id, id), tool);
     m_view.addTool(tool);
@@ -85,9 +87,6 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
 
   if (auto* labelTool = m_tools.value("LabelEditor"))
     connect(labelTool, SIGNAL(atomPickedChanged()), this, SIGNAL(stateChanged()));
-
-  if (auto* autoOpt = m_tools.value("AutoOpt"))
-    connect(autoOpt, SIGNAL(runningChanged()), this, SIGNAL(stateChanged()));
 
   m_calculationTimeout.setSingleShot(true);
   m_calculationTimeout.setInterval(120000);
@@ -225,7 +224,6 @@ QJsonObject WebController::state() const
            { "canOptimize", m_calculators.contains("Forcefield") },
            { "canRenderSurfaces", m_calculators.contains("Surfaces") },
            { "calculating", m_calculating },
-           { "autoOptimizing", autoOptimizing() },
            { "calculationMessage", m_calculationMessage },
            { "calculationError", m_calculationError },
            { "orbitalCount", basis ? static_cast<double>(basis->molecularOrbitalCount()) : 0.0 },
@@ -249,7 +247,7 @@ QJsonObject WebController::state() const
 bool WebController::setTool(const QString& name)
 {
   auto* tool = m_tools.value(name);
-  if (!tool || m_calculating || autoOptimizing())
+  if (!tool || m_calculating)
     return false;
   m_view.setActiveTool(tool);
   m_tool = name;
@@ -291,27 +289,12 @@ bool WebController::setPickedLabel(const QString& label)
          tool->handleCommand("setPickedLabel", { { "label", label } });
 }
 
-bool WebController::autoOptimizing() const
-{
-  const auto* tool = m_tools.value("AutoOpt");
-  return tool && tool->property("running").toBool();
-}
-
-bool WebController::setAutoOptimize(bool enabled, const QString& method)
-{
-  auto* tool = m_tools.value("AutoOpt");
-  if (m_calculating || m_tool != "AutoOpt" || !tool)
-    return false;
-  return tool->handleCommand(enabled ? "startAutoOptimize" : "stopAutoOptimize",
-                             { { "method", method } });
-}
-
 bool WebController::calculate(const QString& command, const QVariantMap& options)
 {
   const QStringList surfaceCommands{ "renderVDW", "renderSolventAccessible",
                                      "renderSolventExcluded", "renderOrbital",
                                      "renderElectronDensity", "renderCube" };
-  if (m_calculating || autoOptimizing() || m_molecule->atomCount() == 0 ||
+  if (m_calculating || m_molecule->atomCount() == 0 ||
       (command != "optimize" && !surfaceCommands.contains(command)))
     return false;
   const QString id = command == "optimize" ? "Forcefield" : "Surfaces";
@@ -378,7 +361,7 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
 
 void WebController::newMolecule()
 {
-  if (!m_calculating && !autoOptimizing())
+  if (!m_calculating)
     replaceMolecule(std::make_unique<QtGui::Molecule>());
 }
 
@@ -386,7 +369,7 @@ QJsonObject WebController::loadMolecule(const QString& text,
                                         const QString& formatName)
 {
   const QString format = formatName.toLower();
-  if (m_calculating || autoOptimizing())
+  if (m_calculating)
     return failure(tr("Wait for the current calculation to finish."));
   if (!supported(format) && format != "pdb" &&
       !(m_calculators.contains("Surfaces") &&
@@ -436,14 +419,14 @@ void WebController::markSaved()
 }
 void WebController::undo()
 {
-  if (m_calculating || autoOptimizing())
+  if (m_calculating)
     return;
   m_molecule->undoMolecule()->undoStack().undo();
   m_view.updateScene();
 }
 void WebController::redo()
 {
-  if (m_calculating || autoOptimizing())
+  if (m_calculating)
     return;
   m_molecule->undoMolecule()->undoStack().redo();
   m_view.updateScene();
@@ -456,7 +439,7 @@ void WebController::resetCamera()
 
 void WebController::deleteSelection()
 {
-  if (m_calculating || autoOptimizing())
+  if (m_calculating)
     return;
   // The Editor command checks active, selected and neighbouring layer locks
   // before making a single undoable edit.

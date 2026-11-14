@@ -34,7 +34,6 @@ public:
   bool alignPickedAtoms(const QString& axis);
   bool setPickedLabel(const QString& label);
   bool calculate(const QString& command, const QVariantMap& options);
-  bool setAutoOptimize(bool enabled, const QString& method);
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);
@@ -64,7 +63,6 @@ private:
   bool m_calculating = false;
   QString m_calculationMessage;
   bool m_calculationError = false;
-  bool autoOptimizing() const;
   QString m_tool = QStringLiteral("draw");
 };
 } // namespace Web

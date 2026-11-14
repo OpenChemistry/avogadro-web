@@ -22,9 +22,6 @@ export class AvogadroEditor extends EventTarget {
   calculate(command, options = {}) {
     if (!this.instance.calculate(command, JSON.stringify(options))) throw new Error('Calculation unavailable.');
   }
-  setAutoOptimize(enabled, method) {
-    if (!this.instance.setAutoOptimize(enabled, method)) throw new Error('Choose a force field compatible with this molecule.');
-  }
   setDrawOptions(options) {
     if (!this.instance.setDrawOptions(JSON.stringify(options))) throw new Error('Invalid draw options.');
   }
@@ -82,16 +79,12 @@ function setupPlugins(state) {
 }
 
 function renderCalculations(state) {
-  const working = state.calculating || state.autoOptimizing;
+  const working = state.calculating;
   $('calculations').hidden = !state.canOptimize && !state.canRenderSurfaces;
   $('force-field-label').hidden = !state.canOptimize;
   $('optimize').hidden = !state.canOptimize;
   $('surface-label').hidden = !state.canRenderSurfaces;
   $('render-surface').hidden = !state.canRenderSurfaces;
-  $('auto-opt-options').hidden = state.tool !== 'AutoOpt';
-  $('auto-opt').textContent = state.autoOptimizing ? 'Stop AutoOptimize' : 'Start AutoOptimize';
-  $('auto-opt-method').disabled = working;
-  $('auto-opt').disabled = state.calculating || state.atomCount === 0;
   $('optimize').disabled = working || state.atomCount === 0;
   $('render-surface').disabled = working || state.atomCount === 0;
   $('force-field').disabled = working;
@@ -201,7 +194,6 @@ $('download').onclick = () => action(() => {
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
 $('optimize').onclick = () => action(() => editor.calculate('optimize', { method: $('force-field').value }), false);
-$('auto-opt').onclick = () => action(() => editor.setAutoOptimize(!editor.state.autoOptimizing, $('auto-opt-method').value));
 $('surface-type').onchange = () => renderCalculations(editor.state);
 $('render-surface').onclick = () => action(() => {
   const type = $('surface-type').value;
