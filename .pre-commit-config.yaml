@@ -1,0 +1,79 @@
+# See https://pre-commit.com. Install once with `pre-commit install`;
+# run everything with `pre-commit run --all-files`.
+minimum_pre_commit_version: "3.2.0"
+
+repos:
+  # Generic hygiene for every tracked text file.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+
+  # C++: same tool family as avogadrolibs; style lives in .clang-format.
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v23.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+
+  # CMake formatting.
+  - repo: https://github.com/BlankSpruce/gersemi-pre-commit
+    rev: 0.29.2
+    hooks:
+      - id: gersemi
+
+  # Python helpers (serve-wasm.py, tests/*.py): lint, then format.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Spelling in code, comments and docs. Project words go in .codespellrc.
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+
+  # JS/CSS/HTML/Markdown. Manual stage until the team agrees to reformat the
+  # compact editor.js style: `pre-commit run prettier --hook-stage manual -a`.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.10.1
+    hooks:
+      - id: prettier
+        stages: [manual]
+        types_or: [javascript, css, html, markdown]
+
+  # PNG compression
+  - repo: https://github.com/oxipng/oxipng
+    rev: v10.1.0
+    hooks:
+      - id: oxipng
+        args: ["-o", "4", "--strip", "safe", "--alpha"]
+
+  # SVG compression. svgo has no hook repo, so pre-commit installs it from npm.
+  # svgo 4 keeps viewBox and <title> by default, so icons stay scalable and
+  # accessible. --final-newline keeps it from fighting end-of-file-fixer.
+  - repo: local
+    hooks:
+      - id: svgo
+        name: svgo
+        language: node
+        additional_dependencies: ["svgo@4.1.0"]
+        entry: svgo
+        args: ["--multipass", "--final-newline", "--eol", "lf", "--quiet"]
+        types: [svg]

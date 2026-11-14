@@ -1,0 +1,5 @@
+[codespell]
+skip = .git,*.cjson,*.sdf,*.mol,*.xyz,*.cube,*.fchk,*.molden
+# Element symbols in editor.js (Te, Nd) are not misspellings.
+ignore-words-list = te,nd
+check-hidden = true
