@@ -293,7 +293,13 @@ bool WebController::calculate(const QString& command, const QVariantMap& options
   m_calculationError = false;
   m_calculationMessage = tr("Calculating…");
   if (!extension->handleCommand(command, options)) {
-    m_calculating = false;
+    // A synchronous failure may already have supplied a more specific error.
+    if (m_calculating) {
+      m_calculating = false;
+      m_calculationMessage = tr("The calculation command was rejected.");
+      m_calculationError = true;
+      emit stateChanged();
+    }
     return false;
   }
   emit stateChanged();
