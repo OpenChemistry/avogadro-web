@@ -7,10 +7,11 @@ It does not create the desktop main window, menus, tool panels, or file dialogs.
 
 ## Run the CI build
 
-1. Sign in to GitHub and open the [WASM Build workflow](https://github.com/OpenChemistry/avogadrolibs/actions/workflows/build_wasm.yml).
-   Open a recent successful run and download **avogadro-web-wasm** from its
-   **Artifacts** section. If the artifact has expired, try a newer run that
-   produced it, or build from source using the instructions below.
+1. [Download the continuous WASM ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip).
+   The [WASM Build workflow](https://github.com/OpenChemistry/avogadro-web/actions/workflows/build_wasm.yml)
+   replaces this download after a successful build of `main`. It is a
+   development build; `build-manifest.json` records its exact source revisions.
+   The download becomes available after the first successful publishing run.
 2. Extract the ZIP and open a terminal in the extracted directory containing
    both `index.html` and `serve-wasm.py`. Keep the extracted files together.
 3. Start the bundled server with Python 3:
@@ -25,6 +26,18 @@ It does not create the desktop main window, menus, tool panels, or file dialogs.
 The prebuilt package only needs Python 3 and a compatible browser. The bundled
 server listens on loopback and sends the cross-origin isolation headers required
 by the editor. Launch the editor through that server.
+
+Pull requests also build the ZIP, available as the **avogadro-web-wasm**
+workflow artifact (GitHub sign-in required; retained for 14 days). Extract the
+artifact archive first, then extract the `avogadro-web-wasm.zip` inside it.
+PR and fork builds do not update the continuous release. Maintainers can rerun
+**WASM Build** manually on `main` to refresh the download.
+
+The workflow currently uses the pinned superbuild and companion revisions from
+`timvdm` forks while the companion changes await upstream integration. Update
+`SUPERBUILD_REVISION`, `AVOGADROLIBS_REVISION`, and the checkout URLs in `.github/workflows/build_wasm.yml`
+together when moving to upstream dependencies. The web source always comes from
+the revision being tested in this repository.
 
 ## Using the editor
 
