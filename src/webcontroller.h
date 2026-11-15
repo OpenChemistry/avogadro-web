@@ -5,12 +5,14 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QObject>
+#include <QTimer>
 #include <memory>
 
 namespace Avogadro {
 namespace QtGui {
 class Molecule;
 class ToolPlugin;
+class ExtensionPlugin;
 class LayerModel;
 }
 namespace QtOpenGL {
@@ -28,6 +30,10 @@ public:
   QJsonObject state() const;
   QtGui::Molecule& molecule() const;
   bool setTool(const QString& name);
+  bool setDisplayStyle(const QString& id, bool enabled);
+  bool alignPickedAtoms(const QString& axis);
+  bool setPickedLabel(const QString& label);
+  bool calculate(const QString& command, const QVariantMap& options);
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);
@@ -37,17 +43,27 @@ public:
   void undo();
   void redo();
   void resetCamera();
+  bool setTheme(const QString& theme);
   void zoom(double delta);
 signals:
   void stateChanged();
 
 private:
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void enableDisplayStyles(const QStringList& names);
+  void addCalculator(const QString& id);
+  void finishCalculation(const QString& message, bool error);
   void replaceMolecule(std::unique_ptr<QtGui::Molecule> molecule);
   QtOpenGL::GLWidget& m_view;
   std::unique_ptr<QtGui::Molecule> m_molecule;
   std::unique_ptr<QtGui::LayerModel> m_layers;
   QMap<QString, QtGui::ToolPlugin*> m_tools;
+  QMap<QString, QtGui::ExtensionPlugin*> m_calculators;
+  QTimer m_calculationTimeout;
+  QString m_activeCalculator;
+  bool m_calculating = false;
+  QString m_calculationMessage;
+  bool m_calculationError = false;
   QString m_tool = QStringLiteral("draw");
 };
 } // namespace Web

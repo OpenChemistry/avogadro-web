@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QJsonArray>
 #include <QMouseEvent>
 #include <QSignalSpy>
 #include <QUndoStack>
@@ -45,6 +46,54 @@ protected:
     tool->mouseReleaseEvent(&release);
   }
 };
+
+TEST_F(WebEditorTest, OpenRestoresAvailableStylesOrFallsBackToBallAndStick)
+{
+  const auto enabled = [this](const QString& id) {
+    const auto styles = editor.state().value("displayStyles").toArray();
+    for (const auto& value : styles) {
+      const auto style = value.toObject();
+      if (style.value("id") == id)
+        return style.value("enabled").toBool();
+    }
+    return false;
+  };
+  ASSERT_TRUE(editor.loadMolecule("1\ncarbon\nC 0 0 0\n", "xyz")
+                .value("ok").toBool());
+  ASSERT_TRUE(enabled("BallStick"));
+  ASSERT_TRUE(editor.setDisplayStyle("BallStick", false));
+  ASSERT_TRUE(editor.setDisplayStyle("Wireframe", true));
+  auto saved = editor.exportMolecule("cjson").value("text").toString();
+  ASSERT_TRUE(editor.loadMolecule(saved, "cjson").value("ok").toBool());
+  EXPECT_TRUE(enabled("Wireframe"));
+  EXPECT_FALSE(enabled("BallStick"));
+
+  auto& styles = editor.molecule().layerInfo()->enable;
+  styles.clear();
+  styles.emplace("UnavailableStyle", std::vector<bool>{ true });
+  saved = editor.exportMolecule("cjson").value("text").toString();
+  ASSERT_TRUE(editor.loadMolecule(saved, "cjson").value("ok").toBool());
+  EXPECT_TRUE(enabled("BallStick"));
+  EXPECT_FALSE(enabled("Wireframe"));
+}
+
+TEST_F(WebEditorTest, ThemeChangesPreserveDocumentAndHistory)
+{
+  clickAtom();
+  const auto before = editor.state();
+  const auto molecule = editor.exportMolecule("cjson");
+  ASSERT_TRUE(editor.setTheme("light"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 238);
+  EXPECT_EQ(editor.state(), before);
+  EXPECT_EQ(editor.exportMolecule("cjson"), molecule);
+  ASSERT_TRUE(editor.setTheme("dark"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 16);
+  EXPECT_FALSE(editor.setTheme("invalid"));
+  EXPECT_EQ(view.renderer().scene().backgroundColor()[0], 16);
+  EXPECT_EQ(editor.state(), before);
+  editor.undo();
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+}
 
 TEST_F(WebEditorTest, WheelZoomIsGentleAndBoundedInEveryTool)
 {
