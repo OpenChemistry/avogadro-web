@@ -1,0 +1,8 @@
+---
+# Mozilla base, keeping the bin-packed call arguments used in this code.
+BasedOnStyle: Mozilla
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+BinPackArguments: true
+BinPackParameters: true
+...
