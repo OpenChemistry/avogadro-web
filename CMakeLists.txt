@@ -49,6 +49,7 @@ if(EMSCRIPTEN)
   configure_file(avogadro2.svg "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/avogadro2.svg" COPYONLY)
   configure_file(serve-wasm.py "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/serve-wasm.py" COPYONLY)
   install(FILES README.md DESTINATION share/avogadro-web)
+  install(FILES docs/images/workspace.png DESTINATION share/avogadro-web/docs/images)
   find_program(AVOGADRO_GZIP_EXECUTABLE gzip)
   if(AVOGADRO_GZIP_EXECUTABLE)
     add_custom_command(TARGET avogadro-web POST_BUILD

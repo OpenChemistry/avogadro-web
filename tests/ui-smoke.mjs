@@ -40,13 +40,19 @@ try {
   if (process.argv.includes('--full-runtime')) {
     const capabilities = await page.evaluate(() => {
       const state = JSON.parse(testRuntime.editorState());
-      return { tools: state.tools.length, styles: state.displayStyles.length,
+      return { tools: state.tools.map(tool => tool.id), styles: state.displayStyles.map(style => style.id),
         optimize: state.canOptimize, surfaces: state.canRenderSurfaces,
         theme: typeof testRuntime.setTheme === 'function' };
     });
-    assert.deepEqual(capabilities, { tools: 9, styles: 6, optimize: true, surfaces: true, theme: true });
+    for (const id of ['navigate', 'draw', 'select', 'MeasureTool', 'Manipulator', 'AlignTool', 'BondCentric', 'LabelEditor'])
+      assert.ok(capabilities.tools.includes(id), `Missing tool: ${id}`);
+    for (const id of ['BallStick', 'Label', 'Cartoons', 'CrystalScene'])
+      assert.ok(capabilities.styles.includes(id), `Missing display style: ${id}`);
+    assert.equal(capabilities.optimize, true);
+    assert.equal(capabilities.surfaces, true);
+    assert.equal(capabilities.theme, true);
     assert.equal(await page.$eval('body', el => el.classList.contains('runtime-fixed-canvas')), false);
-    checks.push('Full runtime exposes nine tools, six display styles, calculations and canvas themes');
+    checks.push('Full runtime exposes editing tools, cartoon and lattice styles, calculations and canvas themes');
   }
   await capture('dark-empty-1440');
   await page.click('#theme');

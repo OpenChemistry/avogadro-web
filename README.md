@@ -7,6 +7,8 @@ molecular surfaces and orbitals. Files are processed in your browser.
 Use the included editor, or build your own interface around the same molecular
 rendering and editing runtime.
 
+![Avogadro molecular workspace displaying caffeine in dark mode](docs/images/workspace.png)
+
 ## Workspace interface
 
 The editor opens in dark mode. The sun/moon control switches the interface and
@@ -156,6 +158,7 @@ The `AvogadroEditor` wrapper provides:
   `adjustHydrogens`, and `adjustBondLengths`.
 - `alignPickedAtoms('x' | 'y' | 'z')` and `setPickedLabel(label)` for picked atoms.
 - `deleteSelection()`, `undo()`, `redo()`, and `resetCamera()`.
+- `setTheme('dark' | 'light')` to change the molecular canvas theme.
 - `calculate(command, options)` for calculations supported by the package.
   See the calculation controls in `editor.js` for commands and their options.
 - `state` and `statechange` events for molecule counts, available tools and
