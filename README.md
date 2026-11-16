@@ -188,6 +188,9 @@ runtime files together, and keep `avogadro2.svg` alongside the included editor.
 A plain `python -m http.server` does not supply the required isolation headers;
 use `serve-wasm.py` for local development.
 
+The editor is hosted at <https://web.avogadro.cc/>, a GitHub Pages site behind
+Cloudflare, which adds the isolation headers.
+
 ## Build from source
 
 To change the C++ controller or the plugins included in the WASM runtime, see
