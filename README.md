@@ -158,7 +158,7 @@ file, send `Content-Encoding: gzip` only for gzip-compressed bytes. Keep the
 runtime files together and preserve the `core/` subdirectory alongside them.
 For a core-only deployment, supply your own host page and serve those files.
 The included full editor also uses `index.html`, `editor.js`, `editor.css`,
-and `avogadro2.svg`.
+and `icons/avogadro2.svg`.
 A plain `python -m http.server` does not supply the required isolation headers;
 use `serve-wasm.py` for local development.
 

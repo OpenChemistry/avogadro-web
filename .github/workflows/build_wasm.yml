@@ -166,7 +166,7 @@ jobs:
 
           package = Path(os.environ['RUNNER_TEMP']) / 'stage-wasm/share/avogadro-web'
           required = [
-              'index.html', 'editor.css', 'editor.js', 'avogadro2.svg',
+              'index.html', 'editor.css', 'editor.js', 'icons/avogadro2.svg',
               'core/avogadro-editor.js', 'qtloader.js',
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
               'README.md', 'serve-wasm.py',
