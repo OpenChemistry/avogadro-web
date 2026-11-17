@@ -144,7 +144,9 @@ jobs:
       - name: Configure
         run: |
           source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
-          "$QT_WASM_PATH/bin/qt-cmake" -S openchemistry -B build-wasm -G Ninja \
+          # The WASM Qt archive may ship qt-cmake without executable permissions.
+          cmake -S openchemistry -B build-wasm -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$QT_WASM_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_HOST_PATH="$QT_HOST_PATH" \
             -DQT_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
