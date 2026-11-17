@@ -52,7 +52,12 @@ if(EMSCRIPTEN)
   install(DIRECTORY web/editor/data web/editor/icons
     DESTINATION share/avogadro-web
     PATTERN ".gitkeep" EXCLUDE)
-  configure_file(web/core/avogadro-editor.js "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js" COPYONLY)
+  if(QT_FEATURE_thread)
+    set(AVOGADRO_WEB_WASM_KIT wasm_multithread)
+  else()
+    set(AVOGADRO_WEB_WASM_KIT wasm_singlethread)
+  endif()
+  configure_file(web/core/avogadro-editor.js "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js" @ONLY)
   configure_file(tools/serve-wasm.py "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/serve-wasm.py" COPYONLY)
   install(FILES README.md DESTINATION share/avogadro-web)
   install(FILES docs/self-hosting.md DESTINATION share/avogadro-web/docs)

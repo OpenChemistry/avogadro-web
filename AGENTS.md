@@ -194,10 +194,10 @@ Build instructions and test commands are in [BUILDING.md](BUILDING.md);
 [README.md](README.md) is for people using or embedding the package. In
 short:
 
-- The **WebAssembly build** uses the Qt multithreaded WASM kit and the
-  matching Emscripten version (currently Qt 6.11.1 and Emscripten 4.0.7,
-  pinned in the CI workflow). Qt supports exactly one Emscripten version per
-  release; do not change one without the other.
+- The **WebAssembly builds** use the Qt single-threaded and multithreaded WASM
+  kits and the matching Emscripten version (currently Qt 6.11.1 and Emscripten
+  4.0.7, pinned in the CI workflow). Qt supports exactly one Emscripten version
+  per release; do not change one without the other.
 - Use a **fresh build directory and install prefix** for each profile.
 - A **native build** of the controller against a web-profile avogadrolibs is
   the quickest way to work on C++:
@@ -209,12 +209,13 @@ short:
   ctest --test-dir build --output-on-failure
   ```
 
-- **Browser tests** need a staged WebAssembly build served by
-  `serve-wasm.py` (`cmake --install <build>/avogadro-web --prefix <stage>`).
-  Tests use fresh browser profiles and never attach to a user's browser.
-- **CI** (`build_wasm.yml`) builds the WASM package from pinned superbuild
+- **Browser tests** need a staged WebAssembly build
+  (`cmake --install <build>/avogadro-web --prefix <stage>`). Serve it using the
+  command for its kit in BUILDING.md. Tests use fresh browser profiles and
+  never attach to a user's browser.
+- **CI** (`build_wasm.yml`) builds both WASM packages from pinned superbuild
   and avogadrolibs revisions, runs `check-build-profile.py`, verifies the
-  staged package and uploads it. Pushes to `main` update the `continuous`
+  staged packages and uploads them. Pushes to `main` update the `continuous`
   prerelease. CI does not yet run the browser tests; run them yourself.
 
 What to run before opening a pull request:
@@ -256,8 +257,8 @@ request. Project words that codespell flags (such as element symbols) go in
   with a notice.
 - **Wheel zoom is clamped** in the controller. Browser wheel events can
   carry hundreds of pixels each.
-- **The page refuses to start without cross-origin isolation.** The current
-  build is multithreaded and needs `SharedArrayBuffer`.
+- **The multithreaded package requires cross-origin isolation.** It uses
+  `SharedArrayBuffer`. The single-threaded package can run without isolation.
 - **`serve-wasm.py` binds to loopback only.** It is a test server, even
   though it ships in the package.
 - **Display styles are re-enabled on load.** If a file has no enabled style

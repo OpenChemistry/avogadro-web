@@ -6,14 +6,17 @@ Tests use fresh profiles and never attach to a user's browser. Chromium's test
 uses Node's built-in APIs. Firefox and startup-failure tests use `puppeteer-core`
 (optionally located by `PUPPETEER_MODULE`). Firefox can run inside `xvfb-run` for
 software rendering on Linux. The startup test serves its own standalone core
-fixture alongside the staged build and also verifies three startup error messages.
+fixture alongside the staged build and checks startup errors. In single-threaded
+mode it also tests the fixture in a cross-origin iframe without isolation.
 
 ```sh
 node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence/chromium
 xvfb-run -a node avogadro-web/tests/browser/firefox-smoke.mjs \
   http://127.0.0.1:8000 evidence/firefox
-node avogadro-web/tests/browser/startup-failures.mjs stage-web-new/share/avogadro-web
-python3 avogadro-web/tests/check-build-profile.py build-web-new
+node avogadro-web/tests/browser/startup-failures.mjs stage-wasm_multithread/share/avogadro-web
+node avogadro-web/tests/browser/startup-failures.mjs stage-wasm_singlethread/share/avogadro-web --single-threaded
+python3 avogadro-web/tests/check-build-profile.py build-wasm_multithread wasm_multithread
+python3 avogadro-web/tests/check-build-profile.py build-wasm_singlethread wasm_singlethread
 ```
 
 To include the external `QWidget::update()` regression, build WASM with
@@ -31,7 +34,7 @@ node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence
 ```
 
 
-To include calculation checks in the Chrome run, set
+To include calculation checks in the multithreaded Chrome run, set
 `AVOGADRO_FCHK_FIXTURE` to the absolute path of
 `avogadrodata/data/fchk/h2o-restricted.fchk` in the superbuild checkout.
 
@@ -55,28 +58,26 @@ cmake -S . -B build-native-no-process-new -G Ninja \
   -DENABLE_SUBPROCESS=OFF
 cmake --build build-native-no-process-new --parallel 4
 
-# Qt 6.11.1 multithreaded WASM and Emscripten 4.0.7.
+# Qt 6.11.1 WASM and Emscripten 4.0.7.
 # Use the SDK's normal environment activation before configuring.
-/path/to/Qt/6.11.1/wasm_multithread/bin/qt-cmake \
-  -S . -B build-web-new -G Ninja -DCMAKE_BUILD_TYPE=Release \
+kit=wasm_multithread  # Set to wasm_singlethread for the embeddable build.
+"/path/to/Qt/6.11.1/$kit/bin/qt-cmake" \
+  -S . -B "build-$kit" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DQT_HOST_PATH=/path/to/Qt/6.11.1/gcc_64
-cmake --build build-web-new --parallel 4
+cmake --build "build-$kit" --parallel 4
 # Stage the application into a separate, empty destination.
-cmake --install build-web-new/avogadro-web --prefix "$PWD/stage-web-new"
-cd stage-web-new/share/avogadro-web
-python3 serve-wasm.py
+cmake --install "build-$kit/avogadro-web" --prefix "$PWD/stage-$kit"
 ```
 
-Open `http://127.0.0.1:8000/`. Stop the server with Ctrl+C. The server binds only to
-loopback and serves its working directory. It sends the required isolation
-headers and serves the optional precompressed WASM file when gzip is accepted.
+Run the commands from the superbuild root once per kit. The Qt kit sets the
+threading mode for both the libraries and the web editor. Use a superbuild
+revision that supports both Qt kits, such as the revision pinned in CI.
 
-Qt's WASM kit selects whether the build uses threads. For the browser release,
-use the multithreaded kit and serve it with `Cross-Origin-Opener-Policy:
-same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. These headers
-enable cross-origin isolation and the `SharedArrayBuffer` used by Qt threads.
-The current browser loader requires that isolation. The single-threaded kit
-can be used to build the libraries without forcing `-pthread`.
+From `stage-wasm_multithread/share/avogadro-web`, run `python3 serve-wasm.py`
+to serve with the required isolation headers and optional gzip compression.
+From `stage-wasm_singlethread/share/avogadro-web`, run
+`python3 -m http.server --bind 127.0.0.1` to serve without isolation headers.
+Open `http://127.0.0.1:8000/` and stop the server with Ctrl+C.
 
 `ENABLE_SUBPROCESS` defaults ON natively and OFF under Emscripten; it is separate
 from `USE_PYTHON`, which builds Python API bindings. Its value is exported as

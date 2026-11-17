@@ -54,7 +54,9 @@ export class AvogadroEditor extends EventTarget {
 
 export async function createAvogadroEditor(viewport, { onExit, print, printErr } = {}) {
   if (!globalThis.WebAssembly) throw new Error('This browser does not support WebAssembly.');
-  if (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer) throw new Error('This build needs cross-origin isolation. Serve it with serve-wasm.py or configure COOP: same-origin and COEP: require-corp.');
+  const requiresIsolation = '@AVOGADRO_WEB_WASM_KIT@' !== 'wasm_singlethread';
+  if (requiresIsolation && (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer))
+    throw new Error('This build needs cross-origin isolation. Serve it with serve-wasm.py or configure COOP: same-origin and COEP: require-corp.');
   const probe = document.createElement('canvas').getContext('webgl2');
   if (!probe) throw new Error('WebGL 2 is unavailable. Enable browser hardware acceleration or use a supported device.');
   probe.getExtension('WEBGL_lose_context')?.loseContext();
