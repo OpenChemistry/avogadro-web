@@ -226,6 +226,31 @@ jobs:
           print(f'Verified web package: {package}')
           PY
 
+      - name: Install browser test dependencies
+        working-directory: openchemistry/avogadro-web/tests/browser
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test staged package in Chromium
+        run: |
+          package="$RUNNER_TEMP/stage-wasm/share/avogadro-web"
+          tests=openchemistry/avogadro-web/tests/browser
+          if [[ "$QT_WASM_KIT" == wasm_singlethread ]]; then
+            node "$tests/startup-failures.mjs" "$package" --single-threaded
+            offline_dir=$(mktemp -d "$RUNNER_TEMP/offline.XXXXXX")
+            cp "$package/avogadro-offline.html" "$offline_dir/"
+            node "$tests/browser-smoke.mjs" "file://$offline_dir/avogadro-offline.html" "$RUNNER_TEMP/browser-evidence"
+          else
+            node "$tests/startup-failures.mjs" "$package"
+            (cd "$package" && exec python3 serve-wasm.py) &
+            server_pid=$!
+            trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+            curl --fail --silent --show-error --retry 10 --retry-connrefused \
+              --output /dev/null http://127.0.0.1:8000/
+            export AVOGADRO_FCHK_FIXTURE="$GITHUB_WORKSPACE/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk"
+            test -s "$AVOGADRO_FCHK_FIXTURE"
+            node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence"
+          fi
+
       - name: Create downloadable ZIP
         working-directory: ${{ runner.temp }}/stage-wasm/share/avogadro-web
         run: python3 -m zipfile -c "$RUNNER_TEMP/$WASM_PACKAGE.zip" .

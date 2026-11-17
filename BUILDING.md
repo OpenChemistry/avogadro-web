@@ -8,6 +8,9 @@ uses Node's built-in APIs. Firefox and startup-failure tests use `puppeteer-core
 software rendering on Linux. The startup test serves its own standalone core
 fixture alongside the staged build and checks startup errors. In single-threaded
 mode it also tests the fixture in a cross-origin iframe without isolation.
+CI runs the Chromium startup and smoke tests for both staged release builds.
+To install the locked test dependency locally, run
+`npm --prefix avogadro-web/tests/browser ci --ignore-scripts`.
 
 ```sh
 node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence/chromium

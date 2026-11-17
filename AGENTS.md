@@ -215,8 +215,8 @@ short:
   never attach to a user's browser.
 - **CI** (`build_wasm.yml`) builds both WASM packages from pinned superbuild
   and avogadrolibs revisions, runs `check-build-profile.py`, verifies the
-  staged packages and uploads them. Pushes to `main` update the `continuous`
-  prerelease. CI does not yet run the browser tests; run them yourself.
+  staged packages and runs Chromium tests before uploading them. Pushes to
+  `main` update the `continuous` prerelease.
 
 What to run before opening a pull request:
 
