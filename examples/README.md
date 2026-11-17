@@ -16,6 +16,6 @@ These directories are reserved for future examples built on the reusable
   [cross-origin isolation headers](https://developer.chrome.com/docs/extensions/reference/manifest/cross-origin-embedder-policy),
   and [enable WASM in its extension-page policy](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy).
 
-See [hosting Avogadro Web](../README.md#host-your-application) for the runtime
+See [hosting Avogadro Web](../docs/self-hosting.md) for the runtime
 requirements and the [Avogadro discussion](https://discuss.avogadro.cc/t/web-avogadro-cc/7590/8)
 for the classroom use cases.

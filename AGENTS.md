@@ -66,7 +66,8 @@ in sync with the desktop app.
 | `tools/serve-wasm.py` | Local test server that sends the required headers. Loopback only. Shipped at the package root |
 | `docs/images/workspace.png` | README screenshot, also installed in the package |
 | `.github/workflows/build_wasm.yml` | CI build, package checks and the `continuous` prerelease download |
-| `README.md` | For users and integrators: running the package, the `AvogadroEditor` API, hosting |
+| `README.md` | Running the package and using the `AvogadroEditor` API |
+| `docs/self-hosting.md` | Server settings for the full editor and custom hosts, also installed in the package |
 | `BUILDING.md` | For contributors: build profiles, native and WASM builds, test commands |
 
 `CMakeLists.txt` copies the assets into the build's `bin/` directory and
