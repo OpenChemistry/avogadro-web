@@ -16,7 +16,7 @@ as well; its C++ rules apply to the C++ in this repository.
 Proposed:
 
 - **C++ in this repository** (everything under `src/*.cpp`, `src/*.h` and
-  `tests/webcontroller.cpp`) follows the avogadrolibs policy: AI assistance
+  `tests/native/webcontroller.cpp`) follows the avogadrolibs policy: AI assistance
   is minimal and a human reviews, fully understands and owns every line.
 - **Interface code** (HTML, CSS, JavaScript, browser tests) may use more AI
   assistance. A human still reviews and approves every pull request, and the
@@ -43,7 +43,7 @@ Ask these questions in order:
 4. **Is it a JavaScript-callable function?** A binding in `src/main.cpp`
    that calls `WebController`. Bindings contain no logic.
 5. **Is it layout, styling, or wiring controls to the editor?**
-   `src/index.html`, `src/editor.css`, `src/editor.js`.
+   `web/editor/`.
 
 If you find yourself writing chemistry in JavaScript, stop: it goes in
 avogadrolibs, where it is tested and fuzzed. This also keeps the web editor
@@ -55,25 +55,24 @@ in sync with the desktop app.
 |------|---------|
 | `src/webcontroller.h`, `src/webcontroller.cpp` | `WebController`: owns the document and layer state; coordinates plugins, undo history, file import and export, theme, and state notifications |
 | `src/main.cpp` | Application entry point and the Embind bindings |
-| `src/index.html`, `src/editor.css`, `src/editor.js` | The page. `editor.js` starts with the reusable `AvogadroEditor` wrapper; the rest wires the example page and registers the WebMCP tool |
-| `tests/webcontroller.cpp` | GoogleTest cases for `WebController`, native build only |
-| `tests/browser-smoke.mjs` | Chromium test of the real WASM build (Node built-ins only); `--plugins`, `--widget-update` and `--webmcp` add optional checks |
-| `tests/firefox-smoke.mjs` | Firefox test of the same build (`puppeteer-core`) |
-| `tests/ui-smoke.mjs` | Workspace UI checks: theme, inspector, tooltips, keyboard (`puppeteer-core`) |
-| `tests/startup-failures.mjs` | Startup error paths: missing WASM, no cross-origin isolation (runs its own server) |
+| `web/core/avogadro-editor.js` | Reusable runtime wrapper and viewport initialization |
+| `web/editor/` | Full editor page, workspace controls, styling, logo, and WebMCP registration |
+| `tests/native/webcontroller.cpp` | GoogleTest cases for `WebController`, native build only |
+| `tests/browser/browser-smoke.mjs` | Chromium test of the real WASM build (Node built-ins only); `--plugins`, `--widget-update` and `--webmcp` add optional checks |
+| `tests/browser/firefox-smoke.mjs` | Firefox test of the same build (`puppeteer-core`) |
+| `tests/browser/ui-smoke.mjs` | Workspace UI checks: theme, inspector, tooltips, keyboard (`puppeteer-core`) |
+| `tests/browser/startup-failures.mjs` | Standalone core smoke fixture and startup error paths (runs its own server) |
 | `tests/check-build-profile.py` | Checks the exact set of plugins and excluded sources in a WASM build tree |
-| `serve-wasm.py` | Local test server that sends the required headers. Loopback only. Shipped in the package |
-| `avogadro2.svg` | Logo, shipped next to `index.html` |
+| `tools/serve-wasm.py` | Local test server that sends the required headers. Loopback only. Shipped at the package root |
 | `docs/images/workspace.png` | README screenshot, also installed in the package |
 | `.github/workflows/build_wasm.yml` | CI build, package checks and the `continuous` prerelease download |
 | `README.md` | For users and integrators: running the package, the `AvogadroEditor` API, hosting |
 | `BUILDING.md` | For contributors: build profiles, native and WASM builds, test commands |
 
-`CMakeLists.txt` copies `src/index.html`, `src/editor.js`, `src/editor.css`,
-`avogadro2.svg` and `serve-wasm.py` into the build's `bin/` directory and
-installs them to `share/avogadro-web`. A new page asset must be added there,
-to the install patterns, and to the `required` list in the CI "Stage and
-verify web package" step.
+`CMakeLists.txt` copies the assets into the build's `bin/` directory and
+installs them to `share/avogadro-web`. The full editor and server are staged
+at the root, and the reusable module is staged under `core/`. Add required
+assets to CMake and to the CI "Stage and verify web package" step.
 
 ## How the pieces talk
 
@@ -97,8 +96,8 @@ verify web package" step.
 README.md documents the wrapper for people building their own page on the
 WASM package. Treat its method names, arguments and `statechange` payload as
 an interface: change them deliberately, update README.md in the same pull
-request, and keep the wrapper free of dependencies on the example page's
-elements so it can be copied into another module.
+request, and keep the wrapper independent of the full editor's elements so
+hosts can import it directly.
 
 The wrapper also tolerates older runtimes. `normalizeState()` fills in
 defaults for state keys that older packages did not report, and optional
@@ -115,9 +114,9 @@ The Draw tool is the model to follow:
 2. `WebController` forwards the command and includes the property in
    `state()`.
 3. `src/main.cpp` adds a one-line binding.
-4. `editor.js` adds a wrapper method, sends the command and renders the
-   control from state.
-5. `tests/webcontroller.cpp` checks the round trip, including rejected
+4. The core module adds a wrapper method. The editor calls it and renders
+   the control from state.
+5. `tests/native/webcontroller.cpp` checks the round trip, including rejected
    values; a browser test checks the control.
 
 Step 1 requires changes in avogadrolibs and pull requests are in progress.
@@ -220,8 +219,8 @@ What to run before opening a pull request:
 | You changed | Run |
 |-------------|-----|
 | `src/webcontroller.*`, `src/main.cpp` | Native `ctest`, and the browser tests if a binding changed |
-| `src/index.html`, `src/editor.css`, `src/editor.js` | `browser-smoke.mjs`, `firefox-smoke.mjs` and `ui-smoke.mjs` |
-| Startup, loading or error handling | `startup-failures.mjs` |
+| `web/editor/` | `browser-smoke.mjs`, `firefox-smoke.mjs` and `ui-smoke.mjs` |
+| Core integration, startup, loading or error handling | `startup-failures.mjs` |
 | The WebMCP tool | `browser-smoke.mjs --webmcp` |
 | The plugin set | `tests/check-build-profile.py` on a fresh build tree |
 | Anything | `pre-commit run --all-files` |

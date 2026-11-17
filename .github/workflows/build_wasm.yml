@@ -166,7 +166,8 @@ jobs:
 
           package = Path(os.environ['RUNNER_TEMP']) / 'stage-wasm/share/avogadro-web'
           required = [
-              'index.html', 'editor.css', 'editor.js', 'qtloader.js',
+              'index.html', 'editor.css', 'editor.js', 'avogadro2.svg',
+              'core/avogadro-editor.js', 'qtloader.js',
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
               'README.md', 'serve-wasm.py',
           ]
@@ -178,11 +179,13 @@ jobs:
               if wasm.read(8) != b'\x00asm\x01\x00\x00\x00':
                   raise SystemExit('Invalid WASM magic or version')
           # Preserve any worker JS/data emitted by the selected Qt runtime.
+          runtime = Path('build-wasm/avogadro-web/bin')
           for pattern in ('*.js', '*.wasm', '*.data'):
-              for source in Path('build-wasm/avogadro-web/bin').glob(pattern):
-                  target = package / source.name
+              for source in runtime.rglob(pattern):
+                  relative_path = source.relative_to(runtime)
+                  target = package / relative_path
                   if not target.is_file() or target.stat().st_size != source.stat().st_size:
-                      raise SystemExit(f'Missing or incomplete runtime asset: {source.name}')
+                      raise SystemExit(f'Missing or incomplete runtime asset: {relative_path}')
 
           def output(*args):
               return subprocess.check_output(args, text=True).strip()
