@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 const url = process.argv[2] || 'http://127.0.0.1:8000';
+const offline = new URL(url).protocol === 'file:';
 const output = resolve(process.argv[3] || 'browser-evidence');
 const testWidgetUpdate = process.argv.includes('--widget-update');
 const testPlugins = process.argv.includes('--plugins');
@@ -25,6 +26,7 @@ const browser = spawn(process.env.CHROME_BINARY || 'google-chrome', [
 ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let sequence = 0, buffer = '', session;
 const pending = new Map(), errors = [], checks = [];
+const externalRequests = new Set();
 browser.stderr.on('data', data => process.stderr.write(data));
 browser.stdio[4].on('data', data => {
   buffer += data.toString();
@@ -35,6 +37,10 @@ browser.stdio[4].on('data', data => {
       const request = pending.get(message.id); pending.delete(message.id);
       if (message.error) request?.reject(new Error(JSON.stringify(message.error)));
       else request?.resolve(message.result);
+    } else if (offline && message.method === 'Network.requestWillBeSent') {
+      const requestUrl = message.params.request.url;
+      if (requestUrl !== url && /^(file|https?):/.test(requestUrl))
+        externalRequests.add(requestUrl);
     } else if (message.method === 'Runtime.exceptionThrown') {
       errors.push(message.params.exceptionDetails.exception?.description || message.params.exceptionDetails.text);
       console.error(errors.at(-1));
@@ -83,6 +89,7 @@ try {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' }, null);
   ({ sessionId: session } = await send('Target.attachToTarget', { targetId, flatten: true }, null));
   await send('Runtime.enable'); await send('Page.enable');
+  if (offline) await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: output }, null);
   if (testWidgetUpdate) {
@@ -440,6 +447,10 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false });
   await delay(300); await screenshot('loaded.png');
   checks.push('Camera input, fit, viewport resize');
+  if (offline) {
+    assert.deepEqual([...externalRequests], []);
+    checks.push('Standalone HTML starts and runs without requesting local assets or HTTP resources');
+  }
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'result.json'), JSON.stringify({ checks, errors }, null, 2));
   console.log(JSON.stringify({ passed: checks.length, checks }));

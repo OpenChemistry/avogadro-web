@@ -181,6 +181,8 @@ jobs:
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
               'README.md', 'docs/self-hosting.md', 'serve-wasm.py',
           ]
+          if os.environ['QT_WASM_KIT'] == 'wasm_singlethread':
+              required.append('avogadro-offline.html')
           for name in required:
               path = package / name
               if not path.is_file() or path.stat().st_size == 0:
@@ -272,7 +274,7 @@ jobs:
           Build: $BUILD_URL
 
           - avogadro-web-wasm.zip includes worker-based calculations. Run python3 serve-wasm.py after extracting it.
-          - avogadro-web-wasm-singlethread.zip supports embedding without cross-origin isolation. Run python3 -m http.server --bind 127.0.0.1 after extracting it.
+          - avogadro-web-wasm-singlethread.zip supports embedding without cross-origin isolation. Extract it and double-click avogadro-offline.html to run it locally.
 
           These are development builds. Each ZIP contains build-manifest.json
           with the exact source revisions and toolchain versions.

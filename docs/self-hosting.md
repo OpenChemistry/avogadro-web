@@ -1,5 +1,9 @@
 # Self-hosting Avogadro Web
 
+For local editing, extract the single-threaded ZIP and open
+`avogadro-offline.html` directly from disk. The file contains the editor and
+its runtime. Use the separate `index.html` and runtime files for hosting.
+
 Serve either build over HTTPS or on loopback during development. The
 multithreaded build needs cross-origin isolation. Configure its server to send
 these headers.

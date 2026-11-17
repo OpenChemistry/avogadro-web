@@ -31,26 +31,22 @@ color switching. Theme changes never enter molecular undo history.
    - [Multithreaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip)
      includes geometry optimization, Auto Optimize, and surface and orbital calculations.
    - [Single-threaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm-singlethread.zip)
-     supports viewing and editing in cross-origin iframes without cross-origin isolation.
+     opens directly from disk and supports viewing and editing in cross-origin iframes.
      The worker-based calculations listed above are unavailable in this build.
 
    See the [download page](https://github.com/OpenChemistry/avogadro-web/releases/tag/continuous)
    for availability and version details.
-2. Extract the ZIP. Keep all files together and open a terminal in the directory
-   containing `index.html`.
-3. Start a local server using the command for your package.
-
-   - Multithreaded: `python3 serve-wasm.py`
-   - Single-threaded: `python3 -m http.server --bind 127.0.0.1`
-
-4. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in a desktop browser.
-   Press Ctrl+C in the terminal to stop the server.
+2. Extract the ZIP.
+   - **Single-threaded**. Double-click `avogadro-offline.html`. You can move
+     this file on its own and open it without a server or internet connection.
+   - **Multithreaded**. Open a terminal in the extracted folder, run
+     `python3 serve-wasm.py`, and open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+     Press Ctrl+C in the terminal to stop the server.
 
 Both builds need a browser with WebAssembly and WebGL 2. The multithreaded
 build also needs SharedArrayBuffer, which the bundled server enables on
 loopback by sending cross-origin isolation headers. Enable hardware
-acceleration if WebGL 2 is unavailable. Open the editor through the server
-using the URL above.
+acceleration if WebGL 2 is unavailable.
 
 ## Using the editor
 
@@ -107,7 +103,8 @@ listed above, and a viewport with a nonzero width and height.
 ### Initialize a viewport
 
 Save the following three files at the root of the unpacked WASM package.
-Start the local server for your package as described above and open
+Start `python3 serve-wasm.py` for the multithreaded package or
+`python3 -m http.server --bind 127.0.0.1` for the single-threaded package and open
 `http://127.0.0.1:8000/viewer.html`. See the
 [self-hosting guide](docs/self-hosting.md) for other servers.
 

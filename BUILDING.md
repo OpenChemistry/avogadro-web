@@ -19,6 +19,17 @@ python3 avogadro-web/tests/check-build-profile.py build-wasm_multithread wasm_mu
 python3 avogadro-web/tests/check-build-profile.py build-wasm_singlethread wasm_singlethread
 ```
 
+To test opening the single-threaded build from disk, copy the offline page
+to an otherwise empty directory and run the Chromium smoke test with its
+`file://` URL.
+
+```sh
+offline_test=$(mktemp -d)
+cp stage-wasm_singlethread/share/avogadro-web/avogadro-offline.html "$offline_test/"
+node avogadro-web/tests/browser/browser-smoke.mjs \
+  "file://$offline_test/avogadro-offline.html" evidence/offline
+```
+
 To include the external `QWidget::update()` regression, build WASM with
 `-DENABLE_TESTING=ON`, serve that build, and run:
 
@@ -72,6 +83,8 @@ cmake --install "build-$kit/avogadro-web" --prefix "$PWD/stage-$kit"
 Run the commands from the superbuild root once per kit. The Qt kit sets the
 threading mode for both the libraries and the web editor. Use a superbuild
 revision that supports both Qt kits, such as the revision pinned in CI.
+The single-threaded build uses Python 3 to generate `avogadro-offline.html`,
+which is included in the staged package.
 
 From `stage-wasm_multithread/share/avogadro-web`, run `python3 serve-wasm.py`
 to serve with the required isolation headers and optional gzip compression.

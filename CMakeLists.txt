@@ -46,9 +46,11 @@ if(EMSCRIPTEN)
   foreach(asset index.html editor.js editor.css)
     configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
   endforeach()
-  file(COPY web/editor/data web/editor/icons
+  file(COPY web/editor/data
     DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     PATTERN ".gitkeep" EXCLUDE)
+  configure_file(web/editor/icons/avogadro2.svg
+    "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/icons/avogadro2.svg" COPYONLY)
   install(DIRECTORY web/editor/data web/editor/icons
     DESTINATION share/avogadro-web
     PATTERN ".gitkeep" EXCLUDE)
@@ -58,6 +60,23 @@ if(EMSCRIPTEN)
     set(AVOGADRO_WEB_WASM_KIT wasm_singlethread)
   endif()
   configure_file(web/core/avogadro-editor.js "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js" @ONLY)
+  if(NOT QT_FEATURE_thread)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(offline_page "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/avogadro-offline.html")
+    set(offline_generator "${CMAKE_CURRENT_SOURCE_DIR}/tools/make-offline.py")
+    add_custom_command(
+      OUTPUT "${offline_page}"
+      COMMAND "${Python3_EXECUTABLE}" "${offline_generator}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+      DEPENDS avogadro-web "${offline_generator}"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/index.html"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.css"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/icons/avogadro2.svg"
+      VERBATIM)
+    add_custom_target(avogadro-web-offline ALL DEPENDS "${offline_page}")
+    install(FILES "${offline_page}" DESTINATION share/avogadro-web)
+  endif()
   configure_file(tools/serve-wasm.py "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/serve-wasm.py" COPYONLY)
   install(FILES README.md DESTINATION share/avogadro-web)
   install(FILES docs/self-hosting.md DESTINATION share/avogadro-web/docs)
