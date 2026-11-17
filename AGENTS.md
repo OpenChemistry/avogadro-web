@@ -71,8 +71,10 @@ in sync with the desktop app.
 
 `CMakeLists.txt` copies the assets into the build's `bin/` directory and
 installs them to `share/avogadro-web`. The full editor and server are staged
-at the root, and the reusable module is staged under `core/`. Add required
-assets to CMake and to the CI "Stage and verify web package" step.
+at the root, and the reusable module is staged under `core/`. Put full-editor
+data and icons in `web/editor/data/` and `web/editor/icons/`. These directories
+are staged as `data/` and `icons/` at the package root. Add assets required
+for startup to the CI "Stage and verify web package" step.
 
 ## How the pieces talk
 

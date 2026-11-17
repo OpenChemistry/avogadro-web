@@ -46,6 +46,12 @@ if(EMSCRIPTEN)
   foreach(asset index.html editor.js editor.css avogadro2.svg)
     configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
   endforeach()
+  file(COPY web/editor/data web/editor/icons
+    DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    PATTERN ".gitkeep" EXCLUDE)
+  install(DIRECTORY web/editor/data web/editor/icons
+    DESTINATION share/avogadro-web
+    PATTERN ".gitkeep" EXCLUDE)
   configure_file(web/core/avogadro-editor.js "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js" COPYONLY)
   configure_file(tools/serve-wasm.py "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/serve-wasm.py" COPYONLY)
   install(FILES README.md DESTINATION share/avogadro-web)
