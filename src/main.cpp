@@ -79,6 +79,17 @@ std::string save(std::string format)
 {
   return json(controller->exportMolecule(QString::fromStdString(format)));
 }
+std::string loadGeneratedMolecule(std::string text, std::string revision)
+{
+  return json(controller->loadGeneratedMolecule(
+    QString::fromStdString(text), QString::fromStdString(revision)));
+}
+std::string applyPartialCharges(std::string revision, std::string charges)
+{
+  const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(charges));
+  return json(controller->applyPartialCharges(QString::fromStdString(revision),
+                                              doc.array()));
+}
 void newMolecule()
 {
   controller->newMolecule();
@@ -126,7 +137,9 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("calculate", &calculate);
   emscripten::function("setDrawOptions", &setDrawOptions);
   emscripten::function("loadMolecule", &load);
+  emscripten::function("loadGeneratedMolecule", &loadGeneratedMolecule);
   emscripten::function("exportMolecule", &save);
+  emscripten::function("applyPartialCharges", &applyPartialCharges);
   emscripten::function("newMolecule", &newMolecule);
   emscripten::function("deleteSelection", &deleteSelection);
   emscripten::function("undo", &undo);
@@ -161,6 +174,7 @@ int main(int argc, char** argv)
 #ifdef AVOGADRO_WASM_BROWSER_TESTS
   viewport = &view;
   EM_ASM({
+    globalThis.avogadroInstanceForTest = Module;
     globalThis.updateAvogadroViewportForTest = Module.updateViewportForTest;
     globalThis.avogadroAtomPositionForTest = Module.atomPositionForTest;
   });

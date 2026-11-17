@@ -168,6 +168,7 @@ jobs:
           required = [
               'index.html', 'editor.css', 'editor.js', 'qtloader.js',
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
+              'openbabel-client.js', 'openbabel-config.js', 'openbabel-worker.js',
               'README.md', 'serve-wasm.py',
           ]
           for name in required:

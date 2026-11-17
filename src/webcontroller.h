@@ -2,6 +2,7 @@
 #ifndef AVOGADRO_WEB_CONTROLLER_H
 #define AVOGADRO_WEB_CONTROLLER_H
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QObject>
@@ -37,7 +38,11 @@ public:
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);
+  QJsonObject loadGeneratedMolecule(const QString& text,
+                                    const QString& revision);
   QJsonObject exportMolecule(const QString& format) const;
+  QJsonObject applyPartialCharges(const QString& revision,
+                                  const QJsonArray& charges);
   void markSaved();
   void deleteSelection();
   void undo();
@@ -62,6 +67,7 @@ private:
   QTimer m_calculationTimeout;
   QString m_activeCalculator;
   bool m_calculating = false;
+  quint64 m_revision = 0;
   QString m_calculationMessage;
   bool m_calculationError = false;
   QString m_tool = QStringLiteral("draw");

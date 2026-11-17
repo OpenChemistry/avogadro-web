@@ -359,6 +359,53 @@ TEST_F(WebEditorTest, ReplacingDocumentReleasesLayerState)
     EXPECT_EQ(editor.molecule().atomCount(), 0);
   }
 }
+TEST_F(WebEditorTest, GasteigerChargesAreUndoableAndRejectStaleOrInvalidResults)
+{
+  const QString water = "3\nwater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n";
+  ASSERT_TRUE(editor.loadMolecule(water, "xyz")["ok"].toBool());
+  const auto revision = editor.state()["revision"].toString();
+  const QJsonArray charges{ -0.41, 0.205, 0.205 };
+  EXPECT_FALSE(editor.applyPartialCharges(revision, { 0.0 })["ok"].toBool());
+  EXPECT_FALSE(
+    editor.applyPartialCharges(revision, { "bad", 0.0, 0.0 })["ok"].toBool());
+  EXPECT_TRUE(editor.molecule().partialChargeTypes().empty());
+  ASSERT_TRUE(editor.applyPartialCharges(revision, charges)["ok"].toBool());
+  EXPECT_TRUE(editor.state()["modified"].toBool());
+  EXPECT_DOUBLE_EQ(editor.molecule().partialCharges("gasteiger")(0, 0), -0.41);
+  EXPECT_FALSE(editor.applyPartialCharges(revision, charges)["ok"].toBool());
+  editor.undo();
+  EXPECT_TRUE(editor.molecule().partialChargeTypes().empty());
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+  editor.redo();
+  EXPECT_DOUBLE_EQ(editor.molecule().partialCharges("gasteiger")(1, 0), 0.205);
+  const auto oldRevision = editor.state()["revision"].toString();
+  ASSERT_TRUE(editor.loadMolecule(water, "xyz")["ok"].toBool());
+  EXPECT_FALSE(editor.applyPartialCharges(oldRevision, charges)["ok"].toBool());
+  EXPECT_TRUE(editor.molecule().partialChargeTypes().empty());
+}
+
+TEST_F(WebEditorTest, GeneratedMoleculeIsUnsavedAndRejectsStaleResults)
+{
+  const QString water = "3\nwater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n";
+  ASSERT_TRUE(editor.loadMolecule(water, "xyz")["ok"].toBool());
+  const auto molfile = editor.exportMolecule("mol")["text"].toString();
+  const auto oldRevision = editor.state()["revision"].toString();
+  editor.newMolecule();
+  EXPECT_FALSE(
+    editor.loadGeneratedMolecule(molfile, oldRevision)["ok"].toBool());
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+  const auto revision = editor.state()["revision"].toString();
+  EXPECT_FALSE(
+    editor.loadGeneratedMolecule("invalid MOL", revision)["ok"].toBool());
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+  ASSERT_TRUE(editor.loadGeneratedMolecule(molfile, revision)["ok"].toBool());
+  EXPECT_EQ(editor.molecule().atomCount(), 3);
+  EXPECT_TRUE(editor.state()["modified"].toBool());
+  editor.markSaved();
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+}
+
 int main(int argc, char** argv)
 {
   QApplication app(argc, argv);

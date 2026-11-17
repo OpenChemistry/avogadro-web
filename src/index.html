@@ -25,6 +25,7 @@
       <fieldset id="document-controls" disabled aria-label="Document actions">
         <button id="new" class="quiet" data-icon="new">New</button
         ><button id="open" class="quiet" data-icon="open">Open</button>
+        <button id="smiles-open" class="quiet" data-icon="draw" hidden>SMILES</button>
         <input
           type="file"
           id="file"
@@ -262,6 +263,8 @@
             >
               <section id="calculations" hidden>
                 <h2>Calculations</h2>
+                <button id="gasteiger-charges" hidden>Assign Gasteiger partial charges</button>
+
                 <p class="description">
                   Refine geometry and explore molecular surfaces.
                 </p>
@@ -316,6 +319,16 @@
       ><span id="status" role="status" aria-live="polite"></span
       ><span class="footer-brand">AVOGADRO WEB</span>
     </footer>
+    <dialog id="smiles-dialog" aria-labelledby="smiles-title">
+      <h2 id="smiles-title">Generate a 3D molecule</h2>
+      <form id="smiles-form">
+        <label>SMILES<input id="smiles" type="text" placeholder="CCO" autocomplete="off" spellcheck="false" required /></label>
+        <div class="dialog-actions">
+          <button id="smiles-cancel" type="button">Cancel</button>
+          <button id="generate-3d" class="primary" type="submit">Generate 3D molecule</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="discard-dialog" aria-labelledby="discard-title">
       <div class="section-eyebrow">UNSAVED MOLECULE</div>
       <h2 id="discard-title">Keep your work?</h2>

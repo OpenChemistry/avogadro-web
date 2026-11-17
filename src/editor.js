@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
+import { OpenBabelClient } from './openbabel-client.js';
+import { openBabelAvailable } from './openbabel-config.js';
 // The wrapper owns no C++ pointers; all messages are plain values.
 export class AvogadroEditor extends EventTarget {
   constructor(instance) {
     super();
     this.instance = instance;
+    this.openBabel = new OpenBabelClient();
+    this.openBabelPending = false;
     instance.onEditorStateChanged = text => {
       this.dispatchEvent(new CustomEvent('statechange', { detail: this.normalizeState(JSON.parse(text)) }));
     };
@@ -44,6 +48,42 @@ export class AvogadroEditor extends EventTarget {
   newMolecule() { this.instance.newMolecule(); }
   loadMolecule(text, format) { return this.check(JSON.parse(this.instance.loadMolecule(text, format))); }
   exportMolecule(format = 'cjson') { return this.check(JSON.parse(this.instance.exportMolecule(format))).text; }
+  get canUseOpenBabel() {
+    return openBabelAvailable && typeof this.instance.loadGeneratedMolecule === 'function' &&
+      typeof this.instance.applyPartialCharges === 'function';
+  }
+  async generate3DFromSmiles(smiles) {
+    if (!this.canUseOpenBabel) throw new Error('This build does not include Open Babel.');
+    const state = this.state;
+    if (this.openBabelPending || state.calculating)
+      throw new Error('Wait for the current calculation to finish.');
+    this.openBabelPending = true;
+    try {
+      const result = await this.openBabel.generate3DFromSmiles(smiles);
+      return { ...result, revision: state.revision };
+    } finally {
+      this.openBabelPending = false;
+    }
+  }
+  loadGeneratedMolecule(result) {
+    return this.check(JSON.parse(this.instance.loadGeneratedMolecule(result.molfile, result.revision)));
+  }
+  async calculateGasteigerCharges() {
+    if (!this.canUseOpenBabel) throw new Error('This build does not include Open Babel.');
+    if (this.openBabelPending) throw new Error('An Open Babel calculation is already running.');
+    const state = this.state;
+    if (!state.atomCount || state.calculating)
+      throw new Error('Open a molecule and finish the current calculation first.');
+    const molfile = this.exportMolecule('mol');
+    this.openBabelPending = true;
+    try {
+      const result = await this.openBabel.gasteigerCharges(molfile);
+      this.check(JSON.parse(this.instance.applyPartialCharges(state.revision, JSON.stringify(result.charges))));
+      return result;
+    } finally {
+      this.openBabelPending = false;
+    }
+  }
   check(result) { if (!result.ok) throw new Error(result.error || 'Unable to process this molecule.'); return result; }
   deleteSelection() { this.instance.deleteSelection(); }
   undo() { this.instance.undo(); }
@@ -91,6 +131,9 @@ function setReady(ready) {
   $('controls').disabled = !ready;
   $('document-controls').disabled = !ready;
   $('viewport').inert = !ready;
+  $('smiles').disabled = !ready;
+  $('generate-3d').disabled = !ready;
+  if (!ready) $('smiles-dialog').close();
 }
 setReady(false);
 function applyTheme() {
@@ -258,14 +301,20 @@ function setupPlugins(state) {
 
 function renderCalculations(state) {
   const working = state.calculating;
-  $('calculations').hidden = !state.canOptimize && !state.canRenderSurfaces;
+  $('calculations').hidden = !state.canOptimize && !state.canRenderSurfaces && !editor.canUseOpenBabel;
+  $('gasteiger-charges').hidden = !editor.canUseOpenBabel;
   $('calculation-unavailable').hidden = !$('calculations').hidden;
+  $('smiles-open').hidden = !editor.canUseOpenBabel;
+  $('smiles-open').disabled = working || editor.openBabelPending;
+  $('smiles').disabled = !runtimeReady || working || editor.openBabelPending;
+  $('generate-3d').disabled = !runtimeReady || working || editor.openBabelPending;
   $('force-field-label').hidden = !state.canOptimize;
   $('optimize').hidden = !state.canOptimize;
   $('surface-label').hidden = !state.canRenderSurfaces;
   $('render-surface').hidden = !state.canRenderSurfaces;
   $('optimize').disabled = working || state.atomCount === 0;
   $('render-surface').disabled = working || state.atomCount === 0;
+  $('gasteiger-charges').disabled = working || editor.openBabelPending || state.atomCount === 0;
   $('force-field').disabled = working;
   $('surface-type').disabled = working;
   $('orbital').disabled = working;
@@ -354,6 +403,33 @@ $('new').onclick = () => action(async () => {
   if (await confirmReplacement()) { editor.newMolecule(); filename = 'Untitled'; message(''); }
 });
 $('open').onclick = () => $('file').click();
+$('smiles-open').onclick = () => {
+  closeExport();
+  $('smiles-dialog').showModal();
+  $('smiles').focus();
+};
+$('smiles-cancel').onclick = () => $('smiles-dialog').close();
+$('smiles-form').onsubmit = event => {
+  event.preventDefault();
+  $('smiles-dialog').close();
+  action(async () => {
+    message('Generating 3D coordinates…');
+    const generation = editor.generate3DFromSmiles($('smiles').value);
+    render(editor.state);
+    try {
+      const result = await generation;
+      if (editor.state.revision !== result.revision)
+        throw new Error('The molecule changed during 3D generation. Run it again.');
+      if (!(await confirmReplacement())) { message(''); return; }
+      editor.loadGeneratedMolecule(result);
+      filename = 'Generated molecule';
+      message(result.optimized ? 'Generated 3D molecule with UFF relaxation.'
+        : 'Generated 3D molecule. UFF parameters were unavailable for relaxation.');
+    } finally {
+      render(editor.state);
+    }
+  });
+};
 $('file').onchange = () => action(async () => {
   const file = $('file').files[0];
   $('file').value = '';
@@ -381,6 +457,17 @@ $('download').onclick = () => action(() => {
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
 $('optimize').onclick = () => action(() => editor.calculate('optimize', { method: $('force-field').value }), false);
+$('gasteiger-charges').onclick = () => action(async () => {
+  message('Calculating Gasteiger partial charges…');
+  const calculation = editor.calculateGasteigerCharges();
+  render(editor.state);
+  try {
+    const result = await calculation;
+    message(`Assigned Gasteiger partial charges to ${result.charges.length} atoms.`);
+  } finally {
+    render(editor.state);
+  }
+}, false);
 $('surface-type').onchange = () => renderCalculations(editor.state);
 $('render-surface').onclick = () => action(() => {
   const type = $('surface-type').value;

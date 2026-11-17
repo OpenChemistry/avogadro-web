@@ -6,6 +6,7 @@
 #include <QUndoStack>
 #include <QWheelEvent>
 #include <algorithm>
+#include <cmath>
 #include <avogadro/core/atom.h>
 #include <avogadro/core/basisset.h>
 #include <avogadro/core/cube.h>
@@ -221,6 +222,7 @@ QJsonObject WebController::state() const
       return cube && cube->cubeType() == Core::Cube::Type::FromFile;
     });
   return { { "tool", m_tool },
+           { "revision", QString::number(m_revision) },
            { "canOptimize", m_calculators.contains("Forcefield") },
            { "canRenderSurfaces", m_calculators.contains("Surfaces") },
            { "calculating", m_calculating },
@@ -330,6 +332,7 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
   // constructor initializes its undo wrapper and stable atom/bond identifiers.
   auto previous = std::move(m_molecule);
   m_molecule = std::move(next);
+  ++m_revision;
   m_layers->addMolecule(m_molecule.get());
   m_view.setMolecule(m_molecule.get());
   for (auto* extension : m_calculators)
@@ -352,8 +355,11 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
           &WebController::stateChanged);
   connect(&stack, &QUndoStack::cleanChanged, this,
           &WebController::stateChanged);
-  connect(m_molecule.get(), &QtGui::Molecule::changed, this,
-          &WebController::stateChanged);
+  connect(m_molecule.get(), &QtGui::Molecule::changed, this, [this]() {
+    ++m_revision;
+    emit stateChanged();
+  });
+
   m_view.updateScene();
   resetCamera();
   emit stateChanged();
@@ -394,6 +400,20 @@ QJsonObject WebController::loadMolecule(const QString& text,
              multiple ? "Only the first molecule/frame was imported." : "" } };
 }
 
+QJsonObject WebController::loadGeneratedMolecule(const QString& text,
+                                                const QString& revision)
+{
+  if (revision != QString::number(m_revision))
+    return failure(
+      tr("The molecule changed during 3D generation. Run it again."));
+  const auto result = loadMolecule(text, "mol");
+  if (result["ok"].toBool()) {
+    m_molecule->undoMolecule()->undoStack().resetClean();
+    emit stateChanged();
+  }
+  return result;
+}
+
 QJsonObject WebController::exportMolecule(const QString& formatName) const
 {
   const QString format = formatName.toLower();
@@ -411,6 +431,33 @@ QJsonObject WebController::exportMolecule(const QString& formatName) const
     return failure(QString::fromUtf8(error.what()));
   }
   return { { "ok", true }, { "text", QString::fromStdString(text) } };
+}
+
+QJsonObject WebController::applyPartialCharges(const QString& revision,
+                                              const QJsonArray& values)
+{
+  if (revision != QString::number(m_revision))
+    return failure(
+      tr("The molecule changed during charge calculation. Run it again."));
+  if (m_calculating)
+    return failure(tr("Wait for the current calculation to finish."));
+  if (values.isEmpty() ||
+      values.size() != static_cast<qsizetype>(m_molecule->atomCount()))
+    return failure(tr("Incorrect partial charge count."));
+  MatrixX charges(values.size(), 1);
+  for (qsizetype i = 0; i < values.size(); ++i) {
+    if (!values[i].isDouble() || !std::isfinite(values[i].toDouble()))
+      return failure(tr("Invalid partial charge value."));
+    charges(i, 0) = values[i].toDouble();
+  }
+  QtGui::RWMolecule::cancelBackgroundCalculations();
+  QtGui::Molecule next(*m_molecule);
+  next.setPartialCharges("gasteiger", charges);
+  m_molecule->undoMolecule()->modifyMolecule(
+    next, QtGui::Molecule::Properties | QtGui::Molecule::Modified,
+    tr("Assign Gasteiger partial charges"));
+  m_view.updateScene();
+  return { { "ok", true } };
 }
 
 void WebController::markSaved()

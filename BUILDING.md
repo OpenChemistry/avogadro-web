@@ -123,3 +123,60 @@ Workspace UI checks (use a runtime with the current plugins):
 ```sh
 node avogadro-web/tests/ui-smoke.mjs http://127.0.0.1:8000 evidence/ui --full-runtime
 ```
+
+## Optional Open Babel worker
+
+Build the independent module with Emscripten and a local Open Babel 3 checkout.
+The module has its own memory and uses Open Babel's compiled-in atom-typing
+data. Builder fragments and UFF parameters are embedded in the WASM binary.
+Emscripten's virtual filesystem must remain enabled for initialization.
+The module runs on one worker thread and does not require Qt.
+
+```sh
+emcmake cmake -S avogadro-web/openbabel-wasm -B build-openbabel-wasm -G Ninja \
+  -DOPENBABEL_SOURCE_DIR=/path/to/openbabel -DCMAKE_BUILD_TYPE=Release
+cmake --build build-openbabel-wasm --target openbabel-web --parallel 4
+
+# Add the module to an already configured Avogadro WASM editor build.
+cmake -S avogadro-web -B /path/to/web-build \
+  -DOPENBABEL_WASM_DIR="$PWD/build-openbabel-wasm/bin"
+cmake --build /path/to/web-build --parallel 4
+```
+
+Keep `openbabel-config.js`, `openbabel-client.js`, `openbabel-worker.js`,
+`openbabel-web.js` and `openbabel-web.wasm` with the editor assets.
+Configure `OPENBABEL_WASM_DIR` to enable the Open Babel tools. The module and
+its bridge use GPL-2.0-or-later.
+
+Build the same bridge natively to compare full-precision per-atom results.
+Use the same Open Babel checkout for both builds and `ENABLE_TESTING=ON` for
+the web editor. The comparison also needs a native `obabel` on `PATH` to generate
+fixtures, or an explicit `OBABEL_BINARY` path.
+
+```sh
+cmake -S avogadro-web/openbabel-wasm -B build-openbabel-native -G Ninja \
+  -DOPENBABEL_SOURCE_DIR=/path/to/openbabel -DCMAKE_BUILD_TYPE=Release
+cmake --build build-openbabel-native --target openbabel-web --parallel 4
+
+# Generate a MOL molecule in the native reference's JSON response.
+echo 'CCO' | build-openbabel-native/bin/openbabel-web --smiles
+
+# Serve the web-build/bin directory using its serve-wasm.py first.
+OPENBABEL_NATIVE_REFERENCE="$PWD/build-openbabel-native/bin/openbabel-web" \
+  node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 \
+  build-openbabel-wasm/evidence/browser --openbabel
+```
+
+The browser test generates nine molecules from SMILES in both native and WASM
+builds. It checks connectivity and stereochemistry against native canonical
+SMILES, explicit hydrogens, finite coordinates, bond lengths and nonplanarity
+where appropriate, plus invalid input, replacement confirmation and stale
+results. `smiles-generation.json` and `generated-*.mol` record the results.
+
+The test also compares Gasteiger charges for water, ethanol, benzene, ammonium, acetate and hydrogen
+at a per-atom tolerance of `1e-12`, then checks persistence, undo/redo, stale
+results and recovery after invalid input. `openbabel-comparison.json` records
+both charge vectors and maximum differences. This preserves the native model's
+behavior. In the tested Open Babel revision, Gasteiger charge sums for ammonium
+and acetate are approximately zero even though their formal molecular charges
+are nonzero.

@@ -620,6 +620,17 @@ dialog form {
   justify-content: flex-end;
   gap: 8px;
 }
+#smiles-form {
+  display: block;
+}
+#smiles-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .danger {
   color: var(--danger);
 }

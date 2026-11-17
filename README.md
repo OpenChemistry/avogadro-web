@@ -85,6 +85,31 @@ In browsers with WebMCP enabled, Avogadro registers the read-only
 atom indices, counts, and the unsaved status of the live molecule. Inspection
 runs in the tab and leaves the editor's undo stack and unsaved status intact.
 
+### Optional Open Babel tools
+
+The first Open Babel request starts the worker and loads the module. Later
+requests reuse that worker.
+
+In the inspector's **Calculate** tab, click **Assign Gasteiger partial charges**.
+The module receives the current molecule as MOL text with explicit hydrogens and formal
+charges. Results are stored under `gasteiger` on the existing molecule, support
+undo/redo, and survive CJSON saves. An edit or document replacement while the
+worker is running causes the result to be rejected. Unsupported elements and
+failed calculations report an error. Hydrogen addition is controlled by the
+editor's existing tools.
+
+Click **SMILES** in the document bar, enter a SMILES such as `CCO`, and click
+**Generate 3D molecule**. The worker parses the SMILES, builds coordinates, adds explicit
+hydrogens and runs up to 200 UFF conjugate-gradient steps. The result opens as a
+new, unsaved molecule after confirmation if the current document has unsaved
+work. Invalid input, cancelled replacement and stale results preserve the
+current document. The generator accepts one SMILES without a title, preserves
+specified stereochemistry, and produces one initial conformation. When UFF
+parameters are unavailable, it returns the builder geometry with a visible
+notice that relaxation was unavailable.
+
+See [BUILDING.md](BUILDING.md#optional-open-babel-worker) to build the module.
+
 ## Build an application with the WASM package
 
 The package contains the compiled Avogadro runtime and an example HTML/JavaScript
@@ -161,6 +186,10 @@ The `AvogadroEditor` wrapper provides:
 - `setTheme('dark' | 'light')` to change the molecular canvas theme.
 - `calculate(command, options)` for calculations supported by the package.
   See the calculation controls in `editor.js` for commands and their options.
+- `canUseOpenBabel` reports whether the worker module and runtime bindings are
+  available. When enabled, `generate3DFromSmiles(smiles)` prepares a molecule,
+  `loadGeneratedMolecule(result)` loads it after your replacement confirmation,
+  and `calculateGasteigerCharges()` assigns partial charges to the current molecule.
 - `state` and `statechange` events for molecule counts, available tools and
   styles, selection, undo/redo availability, unsaved changes, and calculation
   progress.
@@ -170,6 +199,9 @@ When calling the runtime directly, as in the example above, parse JSON results
 and check `ok` yourself. Calculation completion is reported through state
 changes; disable conflicting controls while `state.calculating` is true.
 Your application should handle unsaved changes before replacing a document.
+When copying the wrapper, keep `openbabel-client.js` and
+`openbabel-config.js` alongside it. To enable the Open Babel tools, also
+serve the worker and module assets described in [BUILDING.md](BUILDING.md#optional-open-babel-worker).
 
 ## Host your application
 

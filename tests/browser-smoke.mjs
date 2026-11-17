@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp]
+// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp] [--openbabel]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -13,6 +13,7 @@ const output = resolve(process.argv[3] || 'browser-evidence');
 const testWidgetUpdate = process.argv.includes('--widget-update');
 const testPlugins = process.argv.includes('--plugins');
 const testWebMcp = process.argv.includes('--webmcp');
+const testOpenBabel = process.argv.includes('--openbabel');
 const quantumFixture = process.env.AVOGADRO_FCHK_FIXTURE;
 await mkdir(output, { recursive: true });
 const profile = await mkdtemp(join(tmpdir(), 'avogadro-browser-'));
@@ -85,6 +86,18 @@ try {
   await send('Runtime.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: output }, null);
+  if (testOpenBabel) {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+      globalThis.openBabelWorkerCount = 0;
+      const OriginalWorker = Worker;
+      globalThis.Worker = class extends OriginalWorker {
+        constructor(url, options) {
+          super(url, options);
+          if (String(url).endsWith('/openbabel-worker.js')) ++globalThis.openBabelWorkerCount;
+        }
+      };
+    ` });
+  }
   if (testWidgetUpdate) {
     // Install before WASM starts so cached WebGL function references are counted.
     await send('Page.addScriptToEvaluateOnNewDocument', { source: `
@@ -209,6 +222,182 @@ try {
   const files = await readdir(output);
   for (const extension of ['mol', 'sdf', 'xyz']) assert.ok(files.some(name => name.endsWith(`.${extension}`)));
   checks.push('MOL/SDF/XYZ downloads');
+  if (testOpenBabel) {
+    assert.equal(await evaluate('openBabelWorkerCount'), 0, 'Open Babel starts on demand');
+    await set('format', 'cjson');
+    await click('tab-calculations');
+    const native = process.env.OPENBABEL_NATIVE_REFERENCE;
+    assert.ok(native, 'Set OPENBABEL_NATIVE_REFERENCE to the native openbabel-web executable');
+    const generatedMolecules = [];
+    const exportMolecule = format => evaluate(`JSON.parse(avogadroInstanceForTest.exportMolecule(${JSON.stringify(format)})).text`);
+    const canonical = (input, args) => {
+      const converted = spawnSync(process.env.OBABEL_BINARY || 'obabel', [...args, '-ocan'], { input, encoding: 'utf8' });
+      assert.equal(converted.status, 0, converted.stderr);
+      assert.ok(converted.stdout.trim(), converted.stderr);
+      return converted.stdout.trim().split(/\s/)[0];
+    };
+    const generate = async smiles => {
+      await click('smiles-open');
+      await wait(`document.querySelector('#smiles-dialog').open`, 3000);
+      await set('smiles', smiles);
+      await click('generate-3d');
+      await wait(`document.querySelector('#status').textContent.startsWith('Generated 3D molecule') ||
+        document.querySelector('#status').dataset.error === 'true' || document.querySelector('#discard-dialog').open`, 20000);
+    };
+    for (const [name, smiles, atomCount] of [
+      ['ethanol', 'CCO', 9], ['benzene', 'c1ccccc1', 12], ['cyclohexane', 'C1CCCCC1', 18],
+      ['lactic-acid', 'C[C@H](O)C(=O)O', 12], ['lactic-acid-enantiomer', 'C[C@@H](O)C(=O)O', 12],
+      ['trans-difluoroethene', 'F/C=C/F', 6], ['cis-difluoroethene', 'F/C=C\\F', 6],
+      ['ammonium', '[NH4+]', 5], ['sodium-chloride', '[Na+].[Cl-]', 2],
+    ]) {
+      const reference = spawnSync(native, ['--smiles'], { input: smiles, encoding: 'utf8' });
+      assert.equal(reference.status, 0, reference.stderr + reference.stdout);
+      const nativeMolecule = JSON.parse(reference.stdout);
+      assert.equal(nativeMolecule.ok, true);
+      assert.equal(nativeMolecule.optimized, true);
+      const expected = canonical('', [`-:${smiles}`]);
+      assert.equal(canonical(nativeMolecule.molfile, ['-imol']), expected);
+      await generate(smiles);
+      assert.equal(await evaluate(`document.querySelector('#status').dataset.error`), 'false', await evaluate(`document.querySelector('#status').textContent`));
+      assert.equal(await evaluate(`document.querySelector('#discard-dialog').open`), false);
+      assert.match(await evaluate(`document.querySelector('#status').textContent`), /UFF relaxation/);
+      const molfile = await exportMolecule('mol');
+      assert.equal(canonical(molfile, ['-imol']), expected, `${name} graph and stereochemistry`);
+      const molecule = JSON.parse(await exportMolecule('cjson'));
+      assert.equal(molecule.atoms.elements.number.length, atomCount);
+      const coordinates = molecule.atoms.coords['3d'];
+      assert.equal(coordinates.length, atomCount * 3);
+      assert.ok(coordinates.every(Number.isFinite));
+      const endpoints = molecule.bonds?.connections.index ?? [];
+      for (let i = 0; i < endpoints.length; i += 2) {
+        const a = 3 * endpoints[i], b = 3 * endpoints[i + 1];
+        const distance = Math.hypot(...[0, 1, 2].map(axis => coordinates[a + axis] - coordinates[b + axis]));
+        assert.ok(distance > 0.5 && distance < 2.6, `${name} bond length ${distance}`);
+      }
+      if (name === 'ethanol' || name === 'cyclohexane') {
+        // A scalar triple product detects nonplanarity in any orientation.
+        let volume = 0;
+        for (let i = 1; i < atomCount; ++i) {
+          const a = coordinates.slice(3 * i, 3 * i + 3).map((v, k) => v - coordinates[k]);
+          for (let j = i + 1; j < atomCount; ++j) {
+            const b = coordinates.slice(3 * j, 3 * j + 3).map((v, k) => v - coordinates[k]);
+            for (let l = j + 1; l < atomCount; ++l) {
+              const c = coordinates.slice(3 * l, 3 * l + 3).map((v, k) => v - coordinates[k]);
+              volume = Math.max(volume, Math.abs(a[0] * (b[1] * c[2] - b[2] * c[1]) +
+                a[1] * (b[2] * c[0] - b[0] * c[2]) + a[2] * (b[0] * c[1] - b[1] * c[0])));
+            }
+          }
+        }
+        assert.ok(volume > 0.1, `${name} has nonplanar 3D coordinates`);
+      }
+      assert.equal(await evaluate(`JSON.parse(avogadroInstanceForTest.editorState()).modified`), true);
+      await writeFile(join(output, `generated-${name}.mol`), molfile);
+      await writeFile(join(output, `generated-${name}.cjson`), JSON.stringify(molecule));
+      if (name === 'ethanol') await screenshot('smiles-3d.png');
+      await click('download');
+      generatedMolecules.push({ name, smiles, atomCount, canonical: expected, optimized: true });
+    }
+    const unchanged = await exportMolecule('cjson');
+    await generate('C1CC');
+    assert.match(await evaluate(`document.querySelector('#status').textContent`), /Unable to parse/);
+    assert.equal(await exportMolecule('cjson'), unchanged);
+    await generate('CCO');
+    const unsaved = await exportMolecule('cjson');
+    await generate('O');
+    assert.equal(await evaluate(`document.querySelector('#discard-dialog').open`), true);
+    await evaluate(`document.querySelector('#discard-dialog [value="cancel"]').click()`);
+    await wait(`!document.querySelector('#discard-dialog').open`, 3000);
+    assert.equal(await exportMolecule('cjson'), unsaved);
+    await generate('O');
+    await evaluate(`document.querySelector('#discard-dialog [value="discard"]').click()`);
+    await wait(`document.querySelector('#status').textContent.startsWith('Generated 3D molecule')`, 5000);
+    assert.equal(await evaluate(`JSON.parse(avogadroInstanceForTest.editorState()).atomCount`), 3);
+    await click('download');
+    // Simulate a document edit while the worker is running, in the same event.
+    await evaluate(`document.querySelector('#smiles').value = 'CCO';
+      document.querySelector('#smiles-form').requestSubmit(); avogadroInstanceForTest.newMolecule();`);
+    await wait(`document.querySelector('#status').dataset.error === 'true'`, 10000);
+    assert.match(await evaluate(`document.querySelector('#status').textContent`), /changed during 3D generation/);
+    assert.equal(await evaluate(`JSON.parse(avogadroInstanceForTest.editorState()).atomCount`), 0);
+    await generate('CCO');
+    await click('download');
+    await writeFile(join(output, 'smiles-generation.json'), JSON.stringify({ results: generatedMolecules }, null, 2));
+    checks.push('Nine SMILES generate native and browser 3D molecules with matching graphs, stereochemistry, explicit hydrogens and valid geometry');
+    checks.push('SMILES generation preserves documents on invalid input and cancellation, marks results unsaved, and rejects stale results');
+    const results = [];
+    for (const [name, smiles] of [
+      ['water', 'O'], ['ethanol', 'CCO'], ['benzene', 'c1ccccc1'],
+      ['ammonium', '[NH4+]'], ['acetate', 'CC(=O)[O-]'], ['hydrogen', '[H][H]'],
+    ]) {
+      const fixture = join(profile, `${name}.mol`);
+      const generated = spawnSync(process.env.OBABEL_BINARY || 'obabel', [`-:${smiles}`, '-omol', '-h', '--gen2d', '-O', fixture], { encoding: 'utf8' });
+      assert.equal(generated.status, 0, generated.stderr);
+      await load(fixture);
+      await wait(`document.querySelector('#document-name').textContent === '${name}.mol'`, 5000);
+      // Compare the exact MOL text handed to the worker, including Avogadro's
+      // atom ordering, formal charges and explicit hydrogens.
+      const molfile = await evaluate(`JSON.parse(avogadroInstanceForTest.exportMolecule('mol')).text`);
+      await writeFile(join(output, `${name}.mol`), molfile);
+      const reference = spawnSync(native, [], {
+        input: molfile, encoding: 'utf8',
+        env: { ...process.env, BABEL_DATADIR: '/nonexistent-openbabel-data' },
+      });
+      assert.equal(reference.status, 0, reference.stderr + reference.stdout);
+      const expected = JSON.parse(reference.stdout).charges;
+      await click('gasteiger-charges');
+      await wait(`document.querySelector('#status').textContent.startsWith('Assigned Gasteiger') || document.querySelector('#status').dataset.error === 'true'`, 15000);
+      assert.equal(await evaluate(`document.querySelector('#status').dataset.error`), 'false', await evaluate(`document.querySelector('#status').textContent`));
+      const molecule = await evaluate(`JSON.parse(JSON.parse(avogadroInstanceForTest.exportMolecule('cjson')).text)`);
+      const actual = molecule.atoms.partialCharges.gasteiger;
+      if (name === 'water') await screenshot('gasteiger-charges.png');
+      assert.equal(actual.length, expected.length);
+      const maxError = Math.max(...actual.map((value, i) => Math.abs(value - expected[i])));
+      assert.ok(maxError <= 1e-12, `${name}: maximum charge difference ${maxError}`);
+      assert.match(await evaluate(`document.querySelector('#document-name').textContent`), /\*$/);
+      await click('undo');
+      assert.equal(await evaluate(`JSON.parse(JSON.parse(avogadroInstanceForTest.exportMolecule('cjson')).text).atoms.partialCharges?.gasteiger`), undefined);
+      await click('redo');
+      assert.deepEqual(await evaluate(`JSON.parse(JSON.parse(avogadroInstanceForTest.exportMolecule('cjson')).text).atoms.partialCharges.gasteiger`), actual);
+      // Save and reload through CJSON, including the all-zero hydrogen case.
+      const saved = join(profile, `${name}-charges.cjson`);
+      await writeFile(saved, JSON.stringify(molecule));
+      await click('download');
+      await load(saved);
+      await wait(`document.querySelector('#document-name').textContent === '${name}-charges.cjson'`, 5000);
+      assert.deepEqual(await evaluate(`JSON.parse(JSON.parse(avogadroInstanceForTest.exportMolecule('cjson')).text).atoms.partialCharges.gasteiger`), actual);
+      results.push({ name, atomCount: actual.length, maxError, native: expected, browser: actual });
+    }
+    assert.equal(await evaluate('openBabelWorkerCount'), 1, 'One worker is reused');
+    const stale = await evaluate(`(() => {
+      const instance = avogadroInstanceForTest;
+      const revision = JSON.parse(instance.editorState()).revision;
+      const molfile = JSON.parse(instance.exportMolecule('mol')).text;
+      instance.loadMolecule(molfile, 'mol');
+      return JSON.parse(instance.applyPartialCharges(revision, '[0,0]'));
+    })()`);
+    assert.equal(stale.ok, false);
+    assert.match(stale.error, /changed/);
+    const unsupported = spawnSync(process.env.OBABEL_BINARY || 'obabel', ['-:[Na+].[Cl-]', '-omol', '-h', '--gen2d'], { encoding: 'utf8' });
+    assert.equal(unsupported.status, 0, unsupported.stderr);
+    assert.equal(spawnSync(native, [], { input: unsupported.stdout }).status, 1);
+    const recovery = await evaluate(`(async () => {
+      const { OpenBabelClient } = await import('./openbabel-client.js');
+      const client = new OpenBabelClient();
+      let error;
+      try { await client.gasteigerCharges('invalid MOL'); } catch (failure) { error = failure.message; }
+      let unsupportedError;
+      try { await client.gasteigerCharges(${JSON.stringify(unsupported.stdout)}); } catch (failure) { unsupportedError = failure.message; }
+      const molfile = JSON.parse(avogadroInstanceForTest.exportMolecule('mol')).text;
+      try { return { error, unsupportedError, result: await client.gasteigerCharges(molfile) }; }
+      finally { client.dispose(); }
+    })()`);
+    assert.match(recovery.error, /Unable to read/);
+    assert.match(recovery.unsupportedError, /could not assign/);
+    assert.equal(recovery.result.ok, true);
+    await writeFile(join(output, 'openbabel-comparison.json'), JSON.stringify({ tolerance: 1e-12, results }, null, 2));
+    checks.push('On-demand Open Babel worker reused; six native/browser Gasteiger comparisons within 1e-12');
+    checks.push('Gasteiger charges persist in CJSON, support undo/redo, reject stale results, and recover after invalid input');
+  }
   if (testPlugins) {
     const tool = async id => {
       const selector = JSON.stringify(`[data-tool="${id}"]`);
