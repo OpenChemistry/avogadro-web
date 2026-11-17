@@ -100,15 +100,47 @@ listed above, and a viewport with a nonzero width and height.
 
 ### Initialize a viewport
 
-Load the classic scripts `avogadro-web.js` and `qtloader.js` in your host page
-before creating the editor. In your page's JavaScript module, pass the viewport
-element to the factory:
+Save the following three files at the root of the unpacked WASM package.
+Start the included server with `python3 serve-wasm.py` and open
+`http://127.0.0.1:8000/viewer.html`. See the
+[self-hosting guide](docs/self-hosting.md) for other servers.
+
+`viewer.html`
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Avogadro molecule viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <div id="viewport" tabindex="0" aria-label="Molecule viewport"></div>
+  <script src="avogadro-web.js"></script>
+  <script src="qtloader.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
+```
+
+`viewer.css`
+
+```css
+#viewport {
+  height: 70vh;
+}
+```
+
+`viewer.js`
 
 ```js
 import { createAvogadroEditor } from './core/avogadro-editor.js';
 
 const editor = await createAvogadroEditor(document.querySelector('#viewport'));
 editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
+editor.setTool('navigate');
 ```
 
 The factory checks browser support, initializes the Qt runtime, and handles
