@@ -59,29 +59,35 @@ try {
     const canvas = document.querySelector('#qt-shadow-container').shadowRoot.querySelector('canvas');
     const deltas = [];
     let reads = 0;
-    const read = instance.editorState;
-    instance.editorState = () => { ++reads; return read(); };
+    let liveCalculating = false;
+    instance.editorState = () => {
+      ++reads;
+      return JSON.stringify({ calculating: liveCalculating });
+    };
     instance.zoom = delta => deltas.push(delta);
     const wheel = () => canvas.dispatchEvent(new WheelEvent('wheel', {
       deltaY: 60, bubbles: true, composed: true, cancelable: true,
     }));
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
-    const calculating = value => instance.onEditorStateChanged(JSON.stringify({ calculating: value }));
+    const notifyState = () => instance.onEditorStateChanged(JSON.stringify({ calculating: liveCalculating }));
     wheel();
     wheel();
     await frame();
     wheel();
-    calculating(true);
+    // The controller starts calculating before Qt delivers its queued state notification.
+    liveCalculating = true;
     await frame();
+    notifyState();
     wheel();
     await frame();
-    calculating(false);
+    liveCalculating = false;
+    notifyState();
     wheel();
     await frame();
     return { reads, deltas };
   });
-  assert.deepEqual(wheelResult, { reads: 0, deltas: [-1, -0.5] });
-  console.log('PASS: wheel coalescing and calculation transitions without state polling');
+  assert.deepEqual(wheelResult, { reads: 3, deltas: [-1, -0.5] });
+  console.log('PASS: wheel coalescing and one live state check per zoom frame despite delayed notification');
 
   await corePage.goto(`${origin()}/core-fixture.html?scroll`);
   await corePage.waitForFunction(() => !!globalThis.coreReady);

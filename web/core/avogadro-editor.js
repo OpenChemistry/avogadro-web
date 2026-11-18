@@ -108,7 +108,8 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
       const delta = -wheelPixels / 120;
       wheelPixels = 0;
       wheelFrame = 0;
-      if (!calculating) instance.zoom(delta);
+      // Qt can queue the statechange notification until after this frame.
+      if (!editor.state.calculating) instance.zoom(delta);
     });
   }, { capture: true, passive: false, signal: wheelListener.signal });
 
