@@ -277,6 +277,8 @@ jobs:
             node "$tests/molecule-import-smoke.mjs" "$package"
             node "$tests/share-link.test.mjs"
             node "$tests/share-link-smoke.mjs" "$package"
+            node "$tests/mobile-touch-smoke.mjs" "$package"
+            node "$tests/mobile-first-placement.mjs" "$package"
             node "$tests/startup-failures.mjs" "$package" --single-threaded
             offline_dir=$(mktemp -d "$RUNNER_TEMP/offline.XXXXXX")
             cp "$package/avogadro-offline.html" "$offline_dir/"

@@ -52,7 +52,152 @@ export class AvogadroEditor extends EventTarget {
   markSaved() { this.instance.markSaved(); }
 }
 
-export async function createAvogadroEditor(viewport, { onExit, print, printErr, wheelZoom = true } = {}) {
+// Hold the first touch until a tap or drag is unambiguous. Qt WASM can lose
+// coordinates from synthetic DOM pointer events, so pass viewport positions
+// directly to the controller's existing Qt mouse input path.
+function handleTouchGestures(viewport, instance, editor, signal) {
+  const oldTouchAction = viewport.style.touchAction;
+  viewport.style.touchAction = 'none';
+  const touches = new Map();
+  let gesture;
+  let first;
+  let pair;
+  let cameraFrame = 0;
+  let zoomDelta = 0;
+  let panX = 0;
+  let panY = 0;
+
+  function sendPointer(phase, event) {
+    const bounds = viewport.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+    const modifiers = Number(event.shiftKey) + 2 * Number(event.ctrlKey) +
+      4 * Number(event.altKey) + 8 * Number(event.metaKey);
+    instance.touchPointer(phase, x, y, modifiers);
+  }
+
+  function samplePair() {
+    if (touches.size !== 2) return undefined;
+    const [a, b] = touches.values();
+    return {
+      x: (a.clientX + b.clientX) / 2,
+      y: (a.clientY + b.clientY) / 2,
+      span: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+    };
+  }
+
+  function flushCamera() {
+    cameraFrame = 0;
+    // The C++ zoom binding limits each update to half a wheel notch.
+    // Bound the number of updates per frame as well as each update.
+    let delta = Math.max(-6, Math.min(6, zoomDelta));
+    const dx = panX;
+    const dy = panY;
+    zoomDelta = panX = panY = 0;
+    if (editor.state.calculating) return;
+    while (Math.abs(delta) > 0.001) {
+      const step = Math.max(-0.5, Math.min(0.5, delta));
+      instance.zoom(step);
+      delta -= step;
+    }
+    // Apply translation at the resulting zoom, in viewport-relative units.
+    if ((dx || dy) && typeof instance.pan === 'function') {
+      const { width, height } = viewport.getBoundingClientRect();
+      if (width && height) instance.pan(dx / width, dy / height);
+    }
+  }
+
+  function updateCamera() {
+    const next = samplePair();
+    if (pair && next) {
+      if (pair.span >= 8 && next.span >= 8)
+        zoomDelta += Math.log(next.span / pair.span) * 35;
+      panX += next.x - pair.x;
+      panY += next.y - pair.y;
+      if (!cameraFrame) cameraFrame = requestAnimationFrame(flushCamera);
+    }
+    pair = next;
+  }
+
+  function exceedsTapTolerance(event) {
+    return Math.hypot(event.clientX - first.event.clientX, event.clientY - first.event.clientY) >= 8;
+  }
+
+  function route(event) {
+    if (event.pointerType !== 'touch') return;
+    const id = event.pointerId;
+    const down = event.type === 'pointerdown';
+    const move = event.type === 'pointermove';
+    const cancelled = event.type === 'pointercancel';
+    if (down) {
+      if (touches.size === 0 && event.isPrimary) {
+        first = { event };
+        gesture = 'pending';
+      }
+      if (gesture === 'single' && touches.size === 1) {
+        // Close Qt's one-finger drag before interpreting two fingers.
+        const primary = touches.get(first.event.pointerId);
+        sendPointer('release', primary);
+        gesture = 'two-finger';
+      }
+      touches.set(id, event);
+      if (touches.size > 1 && gesture === 'pending') gesture = 'two-finger';
+      if (gesture === 'two-finger') pair = samplePair();
+    } else if (touches.has(id)) {
+      if (move) {
+        touches.set(id, event);
+        if (gesture === 'two-finger') updateCamera();
+      } else {
+        touches.delete(id);
+        if (gesture === 'two-finger') pair = samplePair();
+      }
+    } else {
+      return;
+    }
+
+    if (first?.event.pointerId === id) {
+      if (gesture === 'pending' && !down && !cancelled) {
+        if (move && (first.drag || exceedsTapTolerance(event))) first.drag = event;
+        if (!move || (first.drag && event.timeStamp - first.event.timeStamp >= 110)) {
+          gesture = 'single';
+          // A tap has no drag motion. Send its press at the release point
+          // so Qt receives one coherent click even if the initial coordinates
+          // were incomplete. Replay fast drags only after observed movement.
+          viewport.focus({ preventScroll: true });
+          sendPointer('press', first.drag ? first.event : event);
+          if (!move && first.drag) sendPointer('move', first.drag);
+        }
+      }
+      if (gesture === 'single') {
+        sendPointer(move ? 'move' : 'release', event);
+        if (!move) { first = undefined; gesture = undefined; }
+      }
+    }
+
+    if (cancelled && gesture === 'two-finger') {
+      cancelAnimationFrame(cameraFrame);
+      cameraFrame = 0;
+      zoomDelta = panX = panY = 0;
+      gesture = 'interrupted';
+    }
+    if (touches.size === 0) {
+      first = undefined;
+      gesture = undefined;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'])
+    viewport.addEventListener(type, route, { capture: true, signal });
+  signal.addEventListener('abort', () => {
+    viewport.style.touchAction = oldTouchAction;
+    cancelAnimationFrame(cameraFrame);
+  }, { once: true });
+}
+
+export async function createAvogadroEditor(viewport, { onExit, print, printErr, wheelZoom = true, touchZoom = true } = {}) {
   if (!globalThis.WebAssembly) throw new Error('This browser does not support WebAssembly.');
   const requiresIsolation = '@AVOGADRO_WEB_WASM_KIT@' !== 'wasm_singlethread';
   if (requiresIsolation && (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer))
@@ -64,7 +209,7 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
     throw new Error('Load avogadro-web.js and qtloader.js before creating the editor.');
 
   let resizeObserver;
-  const wheelListener = new AbortController();
+  const inputListeners = new AbortController();
   let wheelFrame = 0;
   let wheelPixels = 0;
   const instance = await globalThis.qtLoad({
@@ -73,7 +218,7 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
       entryFunction: globalThis.createAvogadroWeb,
       onExit: details => {
         resizeObserver?.disconnect();
-        wheelListener.abort();
+        inputListeners.abort();
         cancelAnimationFrame(wheelFrame);
         onExit?.(details);
       },
@@ -83,18 +228,22 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
   });
   const editor = new AvogadroEditor(instance);
   resizeObserver = new ResizeObserver(() => instance.qtResizeContainerElement(viewport));
-  if (!wheelListener.signal.aborted) resizeObserver.observe(viewport);
+  if (!inputListeners.signal.aborted) {
+    resizeObserver.observe(viewport);
+    if (touchZoom && typeof instance.touchPointer === 'function')
+      handleTouchGestures(viewport, instance, editor, inputListeners.signal);
+  }
 
   if (!wheelZoom) {
     // Keep Qt from consuming the wheel, leaving native page scrolling enabled.
     viewport.addEventListener('wheel', event => event.stopPropagation(),
-      { capture: true, passive: true, signal: wheelListener.signal });
+      { capture: true, passive: true, signal: inputListeners.signal });
     return editor;
   }
 
   let calculating = editor.state.calculating;
   editor.addEventListener('statechange', event => { calculating = event.detail.calculating; },
-    { signal: wheelListener.signal });
+    { signal: inputListeners.signal });
 
   // Combine wheel events Chrome delivers within a frame before Qt sees them.
   viewport.addEventListener('wheel', event => {
@@ -113,7 +262,7 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
       // Qt can queue the statechange notification until after this frame.
       if (!editor.state.calculating) instance.zoom(delta);
     });
-  }, { capture: true, passive: false, signal: wheelListener.signal });
+  }, { capture: true, passive: false, signal: inputListeners.signal });
 
   return editor;
 }

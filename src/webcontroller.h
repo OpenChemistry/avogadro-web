@@ -45,6 +45,8 @@ public:
   void resetCamera();
   bool setTheme(const QString& theme);
   void zoom(double delta);
+  void pan(double x, double y);
+  void touchPointer(const QString& phase, double x, double y, int modifiers);
 signals:
   void stateChanged();
 
@@ -62,6 +64,7 @@ private:
   QTimer m_calculationTimeout;
   QString m_activeCalculator;
   bool m_calculating = false;
+  bool m_touchPressed = false;
   QString m_calculationMessage;
   bool m_calculationError = false;
   QString m_tool = QStringLiteral("draw");

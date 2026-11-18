@@ -50,9 +50,15 @@ function showInspector(show) {
   document.body.classList.toggle('inspector-collapsed', !show);
   $('inspector-toggle').setAttribute('aria-expanded', String(show));
 }
-showInspector(!matchMedia('(max-width: 999px)').matches);
+const compactLayout = matchMedia('(max-width: 999px), (max-height: 500px) and (pointer: coarse)');
+showInspector(!compactLayout.matches);
+compactLayout.addEventListener('change', event => showInspector(!event.matches));
 $('inspector-toggle').onclick = () => showInspector(document.body.classList.contains('inspector-collapsed'));
 $('inspector-close').onclick = () => { showInspector(false); $('inspector-toggle').focus(); };
+const deviceInput = matchMedia('(pointer: coarse)');
+deviceInput.addEventListener('change', () => {
+  if (runtimeReady) render(editor.state);
+});
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function activateTab(tab) {
   for (const candidate of tabs) {
@@ -88,7 +94,7 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || $('discard-dialog').open) return;
   if (!$('export-menu').hidden) { closeExport(); $('export-toggle').focus(); }
-  else if (matchMedia('(max-width: 999px)').matches && !document.body.classList.contains('inspector-collapsed')) {
+  else if (compactLayout.matches && !document.body.classList.contains('inspector-collapsed')) {
     showInspector(false); $('inspector-toggle').focus();
   }
 });
@@ -114,6 +120,11 @@ const toolHelp = {
   LabelEditor: 'Click an atom to edit its label.',
   Manipulator: 'Drag an atom to move it. Select several atoms first to move them together.',
   MeasureTool: 'Click up to four atoms to measure distances, angles, and dihedrals. Double-click to clear.',
+};
+
+const touchToolHelp = {
+  draw: 'Tap to add an atom · Drag to bond · Two fingers to pan or zoom',
+  navigate: 'Drag to rotate · Two fingers to pan or zoom',
 };
 
 const toolTooltip = document.createElement('div');
@@ -248,7 +259,8 @@ function render(state) {
   $('copy-link').disabled = !runtimeReady || !state.atomCount || state.calculating;
   $('empty-state').hidden = state.atomCount !== 0;
   $('active-tool').textContent = state.tools.find(tool => tool.id === state.tool)?.label || 'Tool';
-  $('canvas-help').textContent = state.tool === 'draw' ? 'Click to add an atom · Drag to create a bond · Scroll to zoom' : (toolHelp[state.tool] || 'Drag to rotate · Scroll to zoom');
+  const mouseHelp = state.tool === 'draw' ? 'Click to add an atom · Drag to create a bond · Scroll to zoom' : (toolHelp[state.tool] || 'Drag to rotate · Scroll to zoom');
+  $('canvas-help').textContent = deviceInput.matches ? (touchToolHelp[state.tool] ?? 'Two fingers to pan or zoom') : mouseHelp;
   $('counts').textContent = `${state.atomCount} atoms · ${state.bondCount} bonds`;
   $('undo').disabled = !state.canUndo;
   $('redo').disabled = !state.canRedo;

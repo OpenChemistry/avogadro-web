@@ -56,6 +56,11 @@ an atom or bond to remove it. Select by clicking or dragging a rectangle. Naviga
 by dragging to rotate, right-dragging to pan, and scrolling to zoom. Ctrl/Cmd+Z,
 Ctrl/Cmd+Shift+Z, Ctrl+Y, Delete and Backspace apply only in the viewport.
 
+On phones, the tool strip scrolls horizontally and the inspector opens above it.
+Tap or drag with one finger to use the active tool. Drag with two fingers to
+pan, or spread and pinch to zoom. Both motions work together in any tool.
+A touch that starts on the controls scrolls them normally.
+
 The WASM build also includes Measure, Manipulate, Align, Bond-Centric
 Manipulation, and Edit Labels. Click atoms in the viewport to measure or align
 them. Drag atoms with Manipulate, or pick a bond and right-drag one of its atoms
@@ -181,8 +186,10 @@ try {
 ```
 
 The factory checks browser support, initializes the Qt runtime, and handles
-viewport resizing and wheel zoom. Pass `{ wheelZoom: false }` to let users
-scroll the surrounding page while the pointer is over the viewport. The optional
+viewport resizing, wheel zoom and two-finger pan and zoom. Pass
+`{ touchZoom: false }` when the host handles touch gestures. With
+`{ wheelZoom: false }`, the wheel scrolls the surrounding page while the
+pointer is over the viewport. The optional
 second argument also accepts `onExit(details)`, `print(text)`, and `printErr(text)` callbacks. If you
 initialize Qt yourself, wrap the instance with
 `new AvogadroEditor(instance)` using the class exported by the core module.

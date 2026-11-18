@@ -2,10 +2,13 @@
 #include "webcontroller.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QJsonArray>
+#include <QMouseEvent>
 #include <QUndoStack>
 #include <QWheelEvent>
 #include <algorithm>
+#include <cmath>
 #include <avogadro/core/atom.h>
 #include <avogadro/core/basisset.h>
 #include <avogadro/core/cube.h>
@@ -190,9 +193,52 @@ void WebController::zoom(double delta)
     "zoomScene", { { "delta", std::clamp(delta, -0.5, 0.5) } });
 }
 
+void WebController::pan(double x, double y)
+{
+  if (m_calculating || !std::isfinite(x) || !std::isfinite(y))
+    return;
+
+  m_tools["navigate"]->handleCommand(
+    "translateScene", { { "x", std::clamp(x, -1.0, 1.0) * m_view.width() },
+                        { "y", std::clamp(y, -1.0, 1.0) * m_view.height() } });
+}
+
 QtGui::Molecule& WebController::molecule() const
 {
   return *m_molecule;
+}
+
+void WebController::touchPointer(const QString& phase, double x, double y,
+                                 int modifiers)
+{
+  if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0 || x > 1.0 || y < 0.0 ||
+      y > 1.0 || modifiers < 0 || modifiers > 15)
+    return;
+
+  QEvent::Type type;
+  if (phase == "press" && !m_touchPressed && !m_calculating) {
+    m_touchPressed = true;
+    type = QEvent::MouseButtonPress;
+  } else if (phase == "move" && m_touchPressed && !m_calculating) {
+    type = QEvent::MouseMove;
+  } else if (phase == "release" && m_touchPressed) {
+    m_touchPressed = false;
+    type = QEvent::MouseButtonRelease;
+  } else {
+    return;
+  }
+
+  Qt::KeyboardModifiers keys;
+  keys.setFlag(Qt::ShiftModifier, (modifiers & 1) != 0);
+  keys.setFlag(Qt::ControlModifier, (modifiers & 2) != 0);
+  keys.setFlag(Qt::AltModifier, (modifiers & 4) != 0);
+  keys.setFlag(Qt::MetaModifier, (modifiers & 8) != 0);
+  const QPointF position(x * m_view.width(), y * m_view.height());
+  const auto button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+  const auto buttons = m_touchPressed ? Qt::LeftButton : Qt::NoButton;
+  QMouseEvent event(type, position, m_view.mapToGlobal(position), button,
+                    buttons, keys);
+  QCoreApplication::sendEvent(&m_view, &event);
 }
 
 QJsonObject WebController::state() const
