@@ -74,6 +74,63 @@ try {
     document.querySelector('#qt-shadow-container')?.shadowRoot
       ?.querySelector('canvas')?.clientWidth === width, {}, initialWidth - 160);
   console.log(`PASS: core startup, molecule round trip, statechange and resize (${singleThreaded ? 'cross-origin iframe without isolation' : 'isolated page'})`);
+  const wheelResult = await core.evaluate(async () => {
+    const { instance } = await globalThis.coreReady;
+    const canvas = document.querySelector('#qt-shadow-container').shadowRoot.querySelector('canvas');
+    const deltas = [];
+    let reads = 0;
+    let liveCalculating = false;
+    instance.editorState = () => {
+      ++reads;
+      return JSON.stringify({ calculating: liveCalculating });
+    };
+    instance.zoom = delta => deltas.push(delta);
+    const wheel = () => canvas.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: 60, bubbles: true, composed: true, cancelable: true,
+    }));
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    const notifyState = () => instance.onEditorStateChanged(JSON.stringify({ calculating: liveCalculating }));
+    wheel();
+    wheel();
+    await frame();
+    wheel();
+    // The controller starts calculating before Qt delivers its queued state notification.
+    liveCalculating = true;
+    await frame();
+    notifyState();
+    wheel();
+    await frame();
+    liveCalculating = false;
+    notifyState();
+    wheel();
+    await frame();
+    return { reads, deltas };
+  });
+  assert.deepEqual(wheelResult, { reads: 3, deltas: [-1, -0.5] });
+  console.log('PASS: wheel coalescing and one live state check per zoom frame despite delayed notification');
+
+  await corePage.goto(`${origin()}/core-fixture.html?scroll`);
+  await corePage.waitForFunction(() => !!globalThis.coreReady);
+  await corePage.evaluate(async () => {
+    const editor = await globalThis.coreReady;
+    editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
+    document.body.style.minHeight = '200vh';
+    globalThis.zoomCalls = 0;
+    editor.instance.zoom = () => { ++globalThis.zoomCalls; };
+  });
+  await corePage.waitForFunction(canvasWidth);
+  const surface = await corePage.evaluateHandle(() =>
+    document.querySelector('#qt-shadow-container').shadowRoot.querySelector('canvas'));
+  await surface.asElement().hover();
+  await corePage.evaluate(() => {
+    globalThis.qtWheelEvents = 0;
+    document.querySelector('#qt-shadow-container').shadowRoot.addEventListener('wheel',
+      () => { ++globalThis.qtWheelEvents; }, { capture: true });
+  });
+  await corePage.mouse.wheel({ deltaY: 100 });
+  await corePage.waitForFunction(() => scrollY > 0);
+  assert.deepEqual(await corePage.evaluate(() => [zoomCalls, qtWheelEvents]), [0, 0]);
+  console.log('PASS: native page scrolling over the Qt canvas with wheelZoom disabled');
   await corePage.close();
 
   if (singleThreaded) {

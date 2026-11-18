@@ -4,4 +4,5 @@ import { createAvogadroEditor } from './core/avogadro-editor.js';
 const viewport = document.querySelector('#viewport');
 viewport.style.width = '640px';
 viewport.style.height = '400px';
-globalThis.coreReady = createAvogadroEditor(viewport);
+globalThis.coreReady = createAvogadroEditor(viewport,
+  location.search === '?scroll' ? { wheelZoom: false } : {});

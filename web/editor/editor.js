@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
 import { createAvogadroEditor } from './core/avogadro-editor.js';
-export { AvogadroEditor } from './core/avogadro-editor.js';
 
 const $ = id => document.getElementById(id);
 const icons = {
