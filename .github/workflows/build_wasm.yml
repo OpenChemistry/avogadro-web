@@ -345,6 +345,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  browser-tests:
+    needs: build
+    uses: ./.github/workflows/e2e.yml # zizmor: ignore[self-repository] (actionlint 1.7.12 requires the relative form)
+
   import-corpus:
     needs: build
     uses: ./.github/workflows/fuzz.yml # zizmor: ignore[self-repository] (actionlint 1.7.12 requires the relative form)

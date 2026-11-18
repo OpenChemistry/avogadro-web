@@ -319,3 +319,41 @@ Test the WebMCP interface with `node tests/browser/webmcp-actions-smoke.mjs STAG
 Pass `--threaded` for the multithreaded package. The test enables Chromium's
 WebMCP testing API, intercepts network requests and exercises consent, viewport
 capture, cancellation, session revocation and operation without WebMCP.
+
+### Playwright browser checks
+
+Use the staging directory for a release build and the staging directory for
+a separate hook-enabled build of the same kit. The workflows download both
+from the same WASM run. Locally, point the tests at the extracted stages.
+
+```sh
+cd tests/browser
+npm ci --ignore-scripts --no-audit --no-fund
+npx --no playwright install chromium
+export AVOGADRO_WASM_KIT=wasm_multithread
+export AVOGADRO_WASM_RELEASE=/absolute/path/to/release/share/avogadro-web
+export AVOGADRO_WASM_TEST_HOOKS=/absolute/path/to/hooks/share/avogadro-web
+export AVOGADRO_FCHK_FIXTURE=/absolute/path/to/avogadrodata/data/fchk/h2o-restricted.fchk
+npx --no playwright test --project chromium
+```
+
+For the single-threaded run, set the kit to `wasm_singlethread` and use its
+matching stages. Its tests cover the plain static host, a cross-origin
+iframe, and standalone HTML opened from disk. The threaded run covers
+isolation, geometry optimization, surfaces, and FCHK, Molden and cube
+imports. Chromium gates both kits. Firefox and WebKit jobs report their
+results independently. Screenshots and traces are retained for failures.
+
+The Playwright suite covers drawing, shortcuts, undo/redo, replacement
+confirmation, file imports and downloads, theme and inspector interaction,
+camera projection, wheel behavior, startup and shutdown, WebMCP inspection,
+and plugin controls. Release tests check for absent test hooks. The
+hook-enabled builds verify picking and forced viewport redraw. All Playwright
+tests check page errors and Content Security Policy violations. The axe scan
+excludes the transparent text-input proxies generated inside Qt's shadow root.
+
+Keep the legacy Chromium smoke, startup, Firefox and UI runners during
+the transition. They still provide visual evidence for the measurement overlay, display and
+surface rendering differences, and loading or failure layouts in both
+themes. Playwright verifies application state and canvas projection for its
+functional checks.

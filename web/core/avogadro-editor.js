@@ -220,6 +220,21 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
   if (typeof globalThis.qtLoad !== 'function' || typeof globalThis.createAvogadroWeb !== 'function')
     throw new Error('Load avogadro-web.js and qtloader.js before creating the editor.');
 
+  // The offline generator supplies the embedded binary through its entry
+  // function. Hosted builds compile once and let Qt instantiate the module.
+  // Loading it here lets a missing asset reject the factory without an
+  // additional rejected promise inside Emscripten.
+  let module;
+  if (!globalThis.createAvogadroWeb.hasEmbeddedWasm) {
+    const wasm = new URL('../avogadro-web.wasm', import.meta.url);
+    const response = await fetch(wasm, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`Failed to load WASM (HTTP ${response.status}).`);
+    const mimeType = response.headers.get('Content-Type')?.split(';')[0].trim();
+    module = mimeType === 'application/wasm' && WebAssembly.compileStreaming
+      ? await WebAssembly.compileStreaming(response)
+      : await WebAssembly.compile(await response.arrayBuffer());
+  }
+
   let resizeObserver;
   const inputListeners = new AbortController();
   let wheelFrame = 0;
@@ -228,6 +243,7 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr, 
     qt: {
       containerElements: [viewport],
       entryFunction: globalThis.createAvogadroWeb,
+      module,
       onExit: details => {
         resizeObserver?.disconnect();
         inputListeners.abort();

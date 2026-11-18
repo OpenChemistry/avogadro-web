@@ -320,7 +320,6 @@ function setupPlugins(state) {
     label.className = 'tool-label';
     label.textContent = shortNames[id] || tool.label;
     button.append(icon(id), label);
-    button.setAttribute('aria-label', tool.label);
     button.setAttribute('aria-describedby', 'tool-tooltip');
     button.addEventListener('mouseenter', () => showToolTooltip(button, tool.label));
     button.addEventListener('focus', () => showToolTooltip(button, tool.label));

@@ -180,10 +180,18 @@ try {
     assert.deepEqual(await inspect(), { atomCount: 0, bondCount: 0, modified: false, atoms: [], bonds: [] });
   await click('redo'); await wait(`document.querySelector('#counts').textContent.startsWith('5 atoms')`, 5000);
   checks.push('Undo/redo through HTML controls');
-  await click('new'); await wait(`document.querySelector('#discard-dialog').open`, 5000);
+  const openDiscardDialog = async () => {
+    await evaluate(`{ const button = document.querySelector('#new'); button.focus(); button.click(); }`);
+    await wait(`document.querySelector('#discard-dialog').open`, 5000);
+  };
+  await openDiscardDialog();
   await evaluate(`document.querySelector('#discard-dialog button[value="cancel"]').click()`);
+  // Wait for the close callback to finish and restore viewport focus.
+  await wait(`!document.querySelector('#discard-dialog').open &&
+    document.activeElement === document.querySelector('#viewport')`, 5000);
   assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('5 atoms')`), true);
-  await click('new'); await evaluate(`document.querySelector('#discard-dialog button[value="discard"]').click()`);
+  await openDiscardDialog();
+  await evaluate(`document.querySelector('#discard-dialog button[value="discard"]').click()`);
   await wait(`document.querySelector('#counts').textContent.startsWith('0 atoms')`, 5000);
   checks.push('Unsaved-change confirmation and cancellation');
   await set('element', '8'); await set('bond', '2');

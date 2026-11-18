@@ -49,67 +49,6 @@ protected:
   }
 };
 
-TEST_F(WebEditorTest, TouchPointerUsesLogicalViewportCoordinates)
-{
-  view.resize(640, 480);
-  auto& camera = view.renderer().camera();
-  camera.setViewport(view.width(), view.height());
-  camera.calculatePerspective(40.0f, 0.1f, 100.0f);
-  draw();
-  ASSERT_TRUE(editor.setDrawOptions({ { "adjustHydrogens", false } }));
-
-  editor.touchPointer("press", std::numeric_limits<double>::quiet_NaN(), 0.5,
-                      0);
-  editor.touchPointer("press", 0.25, 1.5, 0);
-  editor.touchPointer("press", 0.25, 0.5, 16);
-  editor.touchPointer("move", 0.25, 0.5, 0);
-  EXPECT_EQ(editor.molecule().atomCount(), 0);
-
-  editor.touchPointer("press", 0.25, 0.65, 0);
-  editor.touchPointer("press", 0.75, 0.30, 0);
-  editor.touchPointer("release", 0.25, 0.65, 0);
-  ASSERT_EQ(editor.molecule().atomCount(), 1);
-  EXPECT_EQ(editor.molecule().bondCount(), 0);
-  const Vector3f point = editor.molecule().atom(0).position3d().cast<float>();
-  const Vector3f projected = camera.project(point);
-  EXPECT_NEAR(projected.x(), 160.0, 1e-3);
-  EXPECT_NEAR(projected.y(), 168.0, 1e-3);
-
-  editor.undo();
-  EXPECT_EQ(editor.molecule().atomCount(), 0);
-}
-
-TEST_F(WebEditorTest, PanPreservesDocumentAndMovesFocusAtEachZoom)
-{
-  clickAtom();
-  view.resize(640, 480);
-  auto& camera = view.renderer().camera();
-  camera.setViewport(view.width(), view.height());
-  camera.calculatePerspective(40.0f, 0.1f, 100.0f);
-
-  const auto initialState = editor.state();
-  const auto initialMolecule = editor.exportMolecule("cjson");
-  const auto projectFocus = [&]() { return camera.project(camera.focus()); };
-  for (int zoom = 0; zoom < 2; ++zoom) {
-    const auto before = projectFocus();
-    const auto orientation = camera.modelView().linear().eval();
-    editor.pan(0.125, -0.1);
-    const auto after = projectFocus();
-    EXPECT_NEAR(after.x() - before.x(), 80.0, 1e-2);
-    EXPECT_NEAR(after.y() - before.y(), 48.0, 1e-2);
-    EXPECT_NEAR(after.z(), before.z(), 1e-5);
-    EXPECT_TRUE(camera.modelView().linear().isApprox(orientation));
-    editor.pan(std::numeric_limits<double>::infinity(), 0.1);
-    EXPECT_TRUE(projectFocus().isApprox(after));
-    for (int step = 0; step < 30; ++step)
-      editor.zoom(0.5);
-  }
-  EXPECT_EQ(editor.state(), initialState);
-  EXPECT_EQ(editor.exportMolecule("cjson"), initialMolecule);
-  editor.undo();
-  EXPECT_EQ(editor.molecule().atomCount(), 0);
-}
-
 TEST_F(WebEditorTest, DispatchesOnlyEnabledActionsWithValidOptions)
 {
   const auto run = [this](const QString& id, const QJsonObject& options = {}) {
@@ -236,6 +175,67 @@ TEST_F(WebEditorTest, CentersAndAlignsCameraWithoutEditingCoordinates)
   ASSERT_TRUE(editor.runAction("center", {})["ok"].toBool());
   EXPECT_TRUE(view.renderer().camera().modelView().linear().isIdentity(1e-6));
   EXPECT_FALSE(editor.state()["modified"].toBool());
+}
+
+TEST_F(WebEditorTest, TouchPointerUsesLogicalViewportCoordinates)
+{
+  view.resize(640, 480);
+  auto& camera = view.renderer().camera();
+  camera.setViewport(view.width(), view.height());
+  camera.calculatePerspective(40.0f, 0.1f, 100.0f);
+  draw();
+  ASSERT_TRUE(editor.setDrawOptions({ { "adjustHydrogens", false } }));
+
+  editor.touchPointer("press", std::numeric_limits<double>::quiet_NaN(), 0.5,
+                      0);
+  editor.touchPointer("press", 0.25, 1.5, 0);
+  editor.touchPointer("press", 0.25, 0.5, 16);
+  editor.touchPointer("move", 0.25, 0.5, 0);
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+
+  editor.touchPointer("press", 0.25, 0.65, 0);
+  editor.touchPointer("press", 0.75, 0.30, 0);
+  editor.touchPointer("release", 0.25, 0.65, 0);
+  ASSERT_EQ(editor.molecule().atomCount(), 1);
+  EXPECT_EQ(editor.molecule().bondCount(), 0);
+  const Vector3f point = editor.molecule().atom(0).position3d().cast<float>();
+  const Vector3f projected = camera.project(point);
+  EXPECT_NEAR(projected.x(), 160.0, 1e-3);
+  EXPECT_NEAR(projected.y(), 168.0, 1e-3);
+
+  editor.undo();
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
+}
+
+TEST_F(WebEditorTest, PanPreservesDocumentAndMovesFocusAtEachZoom)
+{
+  clickAtom();
+  view.resize(640, 480);
+  auto& camera = view.renderer().camera();
+  camera.setViewport(view.width(), view.height());
+  camera.calculatePerspective(40.0f, 0.1f, 100.0f);
+
+  const auto initialState = editor.state();
+  const auto initialMolecule = editor.exportMolecule("cjson");
+  const auto projectFocus = [&]() { return camera.project(camera.focus()); };
+  for (int zoom = 0; zoom < 2; ++zoom) {
+    const auto before = projectFocus();
+    const auto orientation = camera.modelView().linear().eval();
+    editor.pan(0.125, -0.1);
+    const auto after = projectFocus();
+    EXPECT_NEAR(after.x() - before.x(), 80.0, 1e-2);
+    EXPECT_NEAR(after.y() - before.y(), 48.0, 1e-2);
+    EXPECT_NEAR(after.z(), before.z(), 1e-5);
+    EXPECT_TRUE(camera.modelView().linear().isApprox(orientation));
+    editor.pan(std::numeric_limits<double>::infinity(), 0.1);
+    EXPECT_TRUE(projectFocus().isApprox(after));
+    for (int step = 0; step < 30; ++step)
+      editor.zoom(0.5);
+  }
+  EXPECT_EQ(editor.state(), initialState);
+  EXPECT_EQ(editor.exportMolecule("cjson"), initialMolecule);
+  editor.undo();
+  EXPECT_EQ(editor.molecule().atomCount(), 0);
 }
 
 TEST_F(WebEditorTest, OpenRestoresAvailableStylesOrFallsBackToBallAndStick)

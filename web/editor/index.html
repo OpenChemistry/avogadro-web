@@ -35,7 +35,7 @@
       </defs>
     </svg>
     <header class="document-bar">
-      <a class="brand" href="./" aria-label="Avogadro home"
+      <a class="brand" href="./"
         ><img src="icons/avogadro2.svg" alt="" width="32" height="32" /><span>Avogadro<small>MOLECULE EDITOR</small></span></a
       >
       <div class="document-title">
@@ -112,8 +112,9 @@
         title="Switch to light mode"
       ></button>
     </header>
-    <fieldset id="controls" disabled aria-label="Molecule editor">
-      <main>
+    <main>
+      <fieldset id="controls" disabled aria-label="Molecule editor">
+      <div class="editor-layout">
         <nav class="tool-rail" aria-label="Molecular tools">
           <div class="rail-label">TOOLS</div>
           <div id="tools" role="group" aria-label="Tools"></div>
@@ -340,8 +341,9 @@
             </p>
           </div>
         </aside>
-      </main>
-    </fieldset>
+      </div>
+      </fieldset>
+    </main>
     <footer>
       <span class="status-indicator"></span
       ><span id="counts">0 atoms · 0 bonds</span

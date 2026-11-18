@@ -26,7 +26,9 @@ def bundle(directory):
         (b"./share-link.js", (directory / "share-link.js").read_bytes()),
     ):
         pattern = rb"^import \{[^\n]+\} from '" + re.escape(specifier) + rb"';$"
-        editor, count = re.subn(pattern, lambda match, replacement=source: replacement, editor, flags=re.MULTILINE)
+        editor, count = re.subn(
+            pattern, lambda match, replacement=source: replacement, editor, flags=re.MULTILINE
+        )
         if count != 1:
             raise ValueError(f"Expected one editor import of {specifier.decode('ascii')}")
     runtime = (directory / "avogadro-web.js").read_bytes()
@@ -42,6 +44,7 @@ def bundle(directory):
     const wasmBinary = new Uint8Array(await new Response(stream).arrayBuffer());
     return createRuntime({ ...config, wasmBinary });
   };
+  createAvogadroWeb.hasEmbeddedWasm = true;
 })();
 """
     wasm = (directory / "avogadro-web.wasm").read_bytes()
