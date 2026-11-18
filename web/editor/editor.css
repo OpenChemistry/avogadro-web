@@ -210,9 +210,10 @@ fieldset {
   width: 100%;
 }
 #controls {
+  height: 100%;
   min-height: 0;
 }
-main {
+.editor-layout {
   height: 100%;
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr) 288px;
@@ -626,7 +627,7 @@ dialog form {
 [hidden] {
   display: none !important;
 }
-body.inspector-collapsed main {
+body.inspector-collapsed .editor-layout {
   grid-template-columns: 76px minmax(0, 1fr);
 }
 body.inspector-collapsed #inspector {
@@ -661,16 +662,16 @@ body.inspector-collapsed #inspector {
   .canvas-toolbar {
     justify-content: flex-end;
   }
-  main {
+  .editor-layout {
     grid-template-columns: 68px minmax(0, 1fr) 268px;
   }
-  body.inspector-collapsed main {
+  body.inspector-collapsed .editor-layout {
     grid-template-columns: 68px minmax(0, 1fr);
   }
 }
 @media (max-width: 999px) {
-  main,
-  body.inspector-collapsed main {
+  .editor-layout,
+  body.inspector-collapsed .editor-layout {
     grid-template-columns: 68px minmax(0, 1fr);
   }
   #inspector {
@@ -710,14 +711,15 @@ body.inspector-collapsed #inspector {
     display: none;
   }
 }
-@media (max-width: 650px) {
+@media (max-width: 650px), (max-height: 500px) and (pointer: coarse) {
   body {
-    grid-template-rows: 104px minmax(0, 1fr) 34px;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
   .document-bar {
     flex-wrap: wrap;
-    gap: 0 12px;
-    padding: 10px 14px;
+    gap: 4px 8px;
+    padding: 6px 10px;
   }
   .brand {
     font-size: 16px;
@@ -743,10 +745,10 @@ body.inspector-collapsed #inspector {
     order: 4;
     width: 100%;
     justify-content: flex-end;
-    margin-top: 4px;
+    flex-wrap: wrap;
   }
   .history {
-    margin-left: auto;
+    margin: 0 4px 0 auto;
   }
   .brand {
     order: 0;
@@ -754,15 +756,67 @@ body.inspector-collapsed #inspector {
   #theme {
     order: 2;
   }
-  main,
-  body.inspector-collapsed main {
-    grid-template-columns: 58px minmax(0, 1fr);
+  .editor-layout,
+  body.inspector-collapsed .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  #workspace {
+    grid-area: 1 / 1;
   }
   .tool-rail {
-    padding: 14px 5px;
+    grid-area: 2 / 1;
+    flex-direction: row;
+    gap: 4px;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 0;
+    border-top: 1px solid var(--border);
   }
-  #tools button .tool-label {
-    font-size: 8px;
+  .rail-label {
+    display: none;
+  }
+  #tools {
+    flex-direction: row;
+    gap: 3px;
+    overflow: auto hidden;
+  }
+  #tools button {
+    flex: 0 0 52px;
+    touch-action: pan-x;
+    min-height: 44px;
+    padding: 4px;
+  }
+  #tools .icon {
+    pointer-events: none;
+  }
+  .rail-bottom {
+    padding: 0;
+    margin: 0;
+  }
+  #document-controls button,
+  #copy-link,
+  #theme,
+  .canvas-toolbar button,
+  #inspector-close,
+  .tabs button,
+  #delete {
+    min-height: 44px;
+  }
+  #document-controls button.icon-button,
+  #theme,
+  #inspector-close,
+  #delete {
+    min-width: 44px;
+  }
+  #download,
+  #export-toggle {
+    padding-inline: 8px;
+  }
+  .popover {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 120px);
+    overflow: auto;
   }
   #empty-state h1 {
     font-size: 19px;
@@ -777,8 +831,14 @@ body.inspector-collapsed #inspector {
     font-size: 10px;
   }
   footer {
-    padding: 0 12px;
-    gap: 8px;
+    min-height: 34px;
+    padding: 0 10px;
+    gap: 6px;
+  }
+  #status {
+    padding-left: 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .footer-brand {
     display: none;
@@ -789,7 +849,26 @@ body.inspector-collapsed #inspector {
     top: 12px;
   }
   #inspector {
-    width: min(288px, calc(100% - 58px));
+    top: auto;
+    left: 0;
+    bottom: 60px;
+    width: 100%;
+    max-height: calc(100% - 60px);
+    border: 0;
+    border-top: 1px solid var(--border);
+    z-index: 4;
+  }
+  .inspector-content {
+    padding: 14px;
+  }
+  .inspector-note {
+    display: none;
+  }
+  .canvas-label {
+    display: none;
+  }
+  .canvas-toolbar {
+    justify-content: flex-end;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -823,4 +902,34 @@ body.inspector-collapsed #inspector {
   color: var(--text);
   box-shadow: var(--shadow);
   font-size: 12px;
+}
+
+.icon-definitions { position: absolute; }
+
+#lookup-form {
+  flex-direction: column;
+}
+#lookup-form p {
+  margin: 4px 0;
+}
+#lookup-error {
+  color: var(--danger);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#copy-link-dialog form {
+  margin-top: 12px;
+}
+body[data-mode="view"] .tool-rail,
+body[data-mode="view"] #inspector,
+body[data-mode="view"] #inspector-toggle,
+body[data-mode="view"] #document-controls {
+  display: none;
+}
+body[data-mode="view"] .editor-layout {
+  grid-template-columns: minmax(0, 1fr);
 }

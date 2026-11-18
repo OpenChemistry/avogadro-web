@@ -2,21 +2,29 @@
 #include "webcontroller.h"
 
 #include <QAction>
+#include <QBuffer>
+#include <QCoreApplication>
 #include <QJsonArray>
+#include <QMouseEvent>
 #include <QUndoStack>
 #include <QWheelEvent>
 #include <algorithm>
 #include <avogadro/core/atom.h>
 #include <avogadro/core/basisset.h>
+#include <avogadro/core/bond.h>
 #include <avogadro/core/cube.h>
-#include <avogadro/qtgui/extensionplugin.h>
+#include <avogadro/core/layermanager.h>
+#include <avogadro/core/stereo.h>
+#include <avogadro/core/unitcell.h>
 #include <avogadro/io/fileformatmanager.h>
+#include <avogadro/qtgui/extensionplugin.h>
 #include <avogadro/qtgui/layermodel.h>
 #include <avogadro/qtgui/molecule.h>
 #include <avogadro/qtgui/rwmolecule.h>
 #include <avogadro/qtgui/sceneplugin.h>
 #include <avogadro/qtopengl/glwidget.h>
 #include <avogadro/qtplugins/pluginmanager.h>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -26,6 +34,20 @@ namespace {
 QJsonObject failure(const QString& error)
 {
   return { { "ok", false }, { "error", error } };
+}
+QString actionArgument(const QString& id)
+{
+  if (id == "atomProperties" || id == "bondProperties")
+    return QStringLiteral("index");
+  if (id == "editUnitCell")
+    return QStringLiteral("vectors");
+  if (id == "buildSupercell")
+    return QStringLiteral("repeats");
+  if (id == "selectElement")
+    return QStringLiteral("element");
+  if (id == "selectResidue")
+    return QStringLiteral("residue");
+  return {};
 }
 bool supported(const QString& format)
 {
@@ -103,9 +125,22 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
       replacement->setMolecule(m_molecule.get());
     finishCalculation(tr("The calculation did not finish in time."), true);
   });
+  m_actionLabels.insert("center", tr("Center and align view to axes"));
+  m_actionLabels.insert("editUnitCell", tr("Set unit cell vectors"));
+  m_actionLabels.insert("buildSupercell", tr("Build supercell"));
+  m_actionLabels.insert("atomProperties", tr("Inspect atom properties"));
+  m_actionLabels.insert("bondProperties", tr("Inspect bond properties"));
+  m_actionLabels.insert("wrapUnitCell", tr("Wrap atoms to unit cell"));
+  m_actionLabels.insert("reduceCell", tr("Reduce unit cell (Niggli)"));
+  for (const auto& id : { "Hydrogens", "Bonding", "Select" })
+    addActionPlugin(id);
   for (const auto& id : { "Forcefield", "Surfaces" })
     addCalculator(id);
 
+  if (m_calculators.contains("Forcefield")) {
+    m_actionLabels.insert("energy", tr("Calculate energy"));
+    m_actionLabels.insert("forces", tr("Calculate forces"));
+  }
   auto& scene = m_view.sceneModel();
   for (auto* factory : plugins->pluginFactories<QtGui::ScenePluginFactory>())
     scene.addItem(factory->createInstance(&scene));
@@ -115,6 +150,180 @@ WebController::WebController(QtOpenGL::GLWidget& view, QObject* parent)
   newMolecule();
   setTool("draw");
   m_view.installEventFilter(this);
+}
+
+void WebController::addActionPlugin(const QString& id)
+{
+  auto* factory = QtPlugins::PluginManager::instance()
+                    ->pluginFactory<QtGui::ExtensionPluginFactory>(id);
+  if (!factory)
+    return;
+  auto* extension = factory->createInstance(this);
+  m_actionPlugins.insert(id, extension);
+  // Only commands with a reviewed headless interface belong in the editor.
+  static const QStringList commands{
+    "adjustHydrogens", "removeHydrogens",   "removeAllHydrogens", "removeBonds",
+    "createBonds",     "bondSelectedAtoms", "addBondOrders",      "selectAll",
+    "selectNone",      "invertSelection",   "selectElement",      "selectWater",
+    "selectResidue"
+  };
+  connect(extension, &QtGui::ExtensionPlugin::registerCommand, this,
+          [this, id](const QString& name, const QString& description) {
+            if (commands.contains(name)) {
+              m_actionLabels.insert(name, description);
+              m_actionOwners.insert(name, id);
+            }
+          });
+  extension->registerCommands();
+}
+
+bool WebController::actionEnabled(const QString& id) const
+{
+  if (!m_actionLabels.contains(id) || m_calculating || !m_molecule->atomCount())
+    return false;
+  if (id == "bondProperties")
+    return m_molecule->bondCount() > 0;
+  if (id == "center" || id == "atomProperties" ||
+      m_actionOwners.value(id) == "Select")
+    return true;
+  if ((id == "wrapUnitCell" || id == "reduceCell" || id == "buildSupercell") &&
+      (!m_molecule->unitCell() || !m_molecule->unitCell()->isRegular()))
+    return false;
+  // Bulk edit extensions can touch neighbours outside the selection.
+  for (size_t i = 0; i < m_layers->layerCount(); ++i)
+    if (m_layers->layerLocked(i))
+      return false;
+  if (id == "bondSelectedAtoms") {
+    int selected = 0;
+    for (Index i = 0; i < m_molecule->atomCount(); ++i)
+      if (m_molecule->atomSelected(i) && ++selected > 1)
+        return true;
+    return false;
+  }
+  return true;
+}
+
+QJsonObject WebController::runAction(const QString& id,
+                                     const QJsonObject& options)
+{
+  if (!actionEnabled(id))
+    return failure(tr("This action is unavailable for the current document."));
+  const QString argument = actionArgument(id);
+  if (options.keys() !=
+      (argument.isEmpty() ? QStringList{} : QStringList{ argument }))
+    return failure(tr("Invalid action options."));
+  const auto value = options.value(argument);
+  if (argument == "index")
+    return properties(id, value);
+  if (argument == "vectors" || argument == "repeats")
+    return changeCell(id, value.toArray());
+  if (!argument.isEmpty() &&
+      (!value.isString() || value.toString().trimmed().isEmpty() ||
+       value.toString().size() > 32))
+    return failure(tr("Invalid action options."));
+  if (id == "center")
+    resetCamera();
+  else if (id == "wrapUnitCell")
+    m_molecule->undoMolecule()->wrapAtomsToCell();
+  else if (id == "reduceCell")
+    m_molecule->undoMolecule()->niggliReduceCell();
+  else if (id == "energy" || id == "forces") {
+    if (!calculate(id, {}))
+      return failure(tr("The calculation was rejected."));
+  } else {
+    auto* plugin = m_actionPlugins.value(m_actionOwners.value(id));
+    QString error;
+    auto connection =
+      connect(plugin, &QtGui::ExtensionPlugin::commandFailed, this,
+              [&error](const QString& reason) { error = reason; });
+    const bool handled = plugin->handleCommand(id, options.toVariantMap());
+    disconnect(connection);
+    if (!handled || !error.isEmpty())
+      return failure(error.isEmpty() ? tr("The action was rejected.") : error);
+  }
+  emit stateChanged();
+  return { { "ok", true } };
+}
+
+QJsonObject WebController::properties(const QString& id,
+                                      const QJsonValue& value) const
+{
+  const int index = value.toInt(-1);
+  if (!value.isDouble() || index < 0 || value.toDouble() != index)
+    return failure(tr("Expected a non-negative integer index."));
+  QJsonObject properties{ { "index", index } };
+  if (id == "atomProperties") {
+    if (static_cast<Index>(index) >= m_molecule->atomCount())
+      return failure(tr("Atom index out of range."));
+    const auto atom = m_molecule->atom(index);
+    const auto pos = atom.position3d();
+    properties.insert("atomicNumber", atom.atomicNumber());
+    properties.insert("formalCharge", atom.formalCharge());
+    if (static_cast<Index>(index) < m_molecule->atomPositions3d().size())
+      properties.insert("positionAngstrom",
+                        QJsonArray{ pos.x(), pos.y(), pos.z() });
+  } else {
+    if (static_cast<Index>(index) >= m_molecule->bondCount())
+      return failure(tr("Bond index out of range."));
+    const auto bond = m_molecule->bond(index);
+    properties.insert("begin", static_cast<int>(bond.atom1().index()));
+    properties.insert("end", static_cast<int>(bond.atom2().index()));
+    properties.insert("order", bond.order());
+    if (bond.atom2().index() < m_molecule->atomPositions3d().size())
+      properties.insert("lengthAngstrom", bond.length());
+  }
+  return { { "ok", true }, { "properties", properties } };
+}
+
+QJsonObject WebController::changeCell(const QString& id,
+                                      const QJsonArray& values)
+{
+  auto* rw = m_molecule->undoMolecule();
+  if (id == "editUnitCell") {
+    if (values.size() != 9)
+      return failure(tr("Enter three lattice vectors in ångströms."));
+    Matrix3 matrix;
+    for (int i = 0; i < 9; ++i) {
+      const auto component = values[i];
+      if (!component.isDouble() || !std::isfinite(component.toDouble()) ||
+          std::abs(component.toDouble()) > 100000)
+        return failure(tr("Invalid lattice vector component."));
+      matrix(i % 3, i / 3) = component.toDouble();
+    }
+    if (!Core::UnitCell::isRegular(matrix) || matrix.determinant() < 1e-6)
+      return failure(tr("Enter independent, right-handed lattice vectors."));
+    const bool create = !m_molecule->unitCell();
+    if (create) {
+      rw->undoStack().beginMacro(tr("Add Unit Cell"));
+      rw->addUnitCell();
+    }
+    rw->editUnitCell(matrix, Core::CrystalTools::None);
+    if (create)
+      rw->undoStack().endMacro();
+  } else {
+    const auto& positions = m_molecule->atomPositions3d();
+    if (positions.size() != m_molecule->atomCount() ||
+        !std::all_of(positions.begin(), positions.end(),
+                     [](const Vector3& pos) { return pos.allFinite(); }))
+      return failure(tr(
+        "Supercell construction requires finite coordinates for each atom."));
+    if (values.size() != 3)
+      return failure(tr("Enter the number of copies along a, b and c."));
+    int copies = 1;
+    for (const auto& value : values) {
+      const int n = value.toInt();
+      if (!value.isDouble() || value.toDouble() != n || n < 1 || n > 32)
+        return failure(tr("Supercell repeats must be integers from 1 to 32."));
+      copies *= n;
+    }
+    if (copies == 1 || m_molecule->atomCount() > 100000u / copies ||
+        m_molecule->bondCount() > 200000u / copies)
+      return failure(tr("Choose a larger than 1×1×1 cell within 100,000 atoms "
+                        "and 200,000 bonds."));
+    rw->buildSupercell(values[0].toInt(), values[1].toInt(), values[2].toInt());
+  }
+  emit stateChanged();
+  return { { "ok", true } };
 }
 
 void WebController::addCalculator(const QString& id)
@@ -161,6 +370,8 @@ WebController::~WebController()
     extension->setMolecule(nullptr);
     delete extension;
   }
+  for (auto* extension : m_actionPlugins)
+    extension->setMolecule(nullptr);
   m_view.setMolecule(nullptr);
 }
 
@@ -190,9 +401,73 @@ void WebController::zoom(double delta)
     "zoomScene", { { "delta", std::clamp(delta, -0.5, 0.5) } });
 }
 
+void WebController::pan(double x, double y)
+{
+  if (m_calculating || !std::isfinite(x) || !std::isfinite(y))
+    return;
+
+  m_tools["navigate"]->handleCommand(
+    "translateScene", { { "x", std::clamp(x, -1.0, 1.0) * m_view.width() },
+                        { "y", std::clamp(y, -1.0, 1.0) * m_view.height() } });
+}
+
 QtGui::Molecule& WebController::molecule() const
 {
   return *m_molecule;
+}
+
+QJsonObject WebController::captureViewport() const
+{
+  if (m_calculating)
+    return failure(tr("Wait for the current calculation to finish."));
+  auto image = m_view.grabFramebuffer();
+  if (image.isNull())
+    return failure(tr("The viewport image is unavailable."));
+  if (image.width() > 1024 || image.height() > 1024)
+    image =
+      image.scaled(1024, 1024, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+  QBuffer buffer;
+  buffer.open(QIODevice::WriteOnly);
+  if (!image.save(&buffer, "PNG"))
+    return failure(tr("Could not encode the viewport image."));
+  return { { "ok", true },
+           { "mimeType", "image/png" },
+           { "width", image.width() },
+           { "height", image.height() },
+           { "data", QString::fromLatin1(buffer.data().toBase64()) } };
+}
+
+void WebController::touchPointer(const QString& phase, double x, double y,
+                                 int modifiers)
+{
+  if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0 || x > 1.0 || y < 0.0 ||
+      y > 1.0 || modifiers < 0 || modifiers > 15)
+    return;
+
+  QEvent::Type type;
+  if (phase == "press" && !m_touchPressed && !m_calculating) {
+    m_touchPressed = true;
+    type = QEvent::MouseButtonPress;
+  } else if (phase == "move" && m_touchPressed && !m_calculating) {
+    type = QEvent::MouseMove;
+  } else if (phase == "release" && m_touchPressed) {
+    m_touchPressed = false;
+    type = QEvent::MouseButtonRelease;
+  } else {
+    return;
+  }
+
+  Qt::KeyboardModifiers keys;
+  keys.setFlag(Qt::ShiftModifier, (modifiers & 1) != 0);
+  keys.setFlag(Qt::ControlModifier, (modifiers & 2) != 0);
+  keys.setFlag(Qt::AltModifier, (modifiers & 4) != 0);
+  keys.setFlag(Qt::MetaModifier, (modifiers & 8) != 0);
+  const QPointF position(x * m_view.width(), y * m_view.height());
+  const auto button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+  const auto buttons = m_touchPressed ? Qt::LeftButton : Qt::NoButton;
+  QMouseEvent event(type, position, m_view.mapToGlobal(position), button,
+                    buttons, keys);
+  QCoreApplication::sendEvent(&m_view, &event);
 }
 
 QJsonObject WebController::state() const
@@ -220,28 +495,46 @@ QJsonObject WebController::state() const
     cubes.begin(), cubes.end(), [](const Core::Cube* cube) {
       return cube && cube->cubeType() == Core::Cube::Type::FromFile;
     });
-  return { { "tool", m_tool },
-           { "canOptimize", m_calculators.contains("Forcefield") },
-           { "canRenderSurfaces", m_calculators.contains("Surfaces") },
-           { "calculating", m_calculating },
-           { "calculationMessage", m_calculationMessage },
-           { "calculationError", m_calculationError },
-           { "orbitalCount", basis ? static_cast<double>(basis->molecularOrbitalCount()) : 0.0 },
-           { "homo", basis ? static_cast<double>(basis->homo()) : 0.0 },
-           { "cubeCount", static_cast<double>(importedCubes) },
-           { "pickedAtomIndex", pickedIndex },
-           { "pickedLabel", labelTool ? labelTool->property("pickedLabel").toString()
-                                       : QString() },
-           { "tools", tools },
-           { "displayStyles", styles },
-           { "drawOptions",
-             QJsonObject::fromVariantMap(
-               m_tools["draw"]->property("drawOptions").toMap()) },
-           { "atomCount", static_cast<double>(m_molecule->atomCount()) },
-           { "bondCount", static_cast<double>(m_molecule->bondCount()) },
-           { "modified", !stack.isClean() },
-           { "canUndo", stack.canUndo() },
-           { "canRedo", stack.canRedo() } };
+  QJsonArray actions;
+  for (auto it = m_actionLabels.cbegin(); it != m_actionLabels.cend(); ++it)
+    actions.append(QJsonObject{
+      { "id", it.key() },
+      { "label", it.value() },
+      { "enabled", actionEnabled(it.key()) },
+      { "argument", actionArgument(it.key()) },
+      { "calculation", it.key() == "energy" || it.key() == "forces" } });
+  QJsonArray vectors;
+  if (const auto* cell = m_molecule->unitCell()) {
+    for (int col = 0; col < 3; ++col)
+      for (int row = 0; row < 3; ++row)
+        vectors.append(cell->cellMatrix()(row, col));
+  }
+  return {
+    { "cellVectors", vectors },
+    { "tool", m_tool },
+    { "actions", actions },
+    { "canOptimize", m_calculators.contains("Forcefield") },
+    { "canRenderSurfaces", m_calculators.contains("Surfaces") },
+    { "calculating", m_calculating },
+    { "calculationMessage", m_calculationMessage },
+    { "calculationError", m_calculationError },
+    { "orbitalCount",
+      basis ? static_cast<double>(basis->molecularOrbitalCount()) : 0.0 },
+    { "homo", basis ? static_cast<double>(basis->homo()) : 0.0 },
+    { "cubeCount", static_cast<double>(importedCubes) },
+    { "pickedAtomIndex", pickedIndex },
+    { "pickedLabel",
+      labelTool ? labelTool->property("pickedLabel").toString() : QString() },
+    { "tools", tools },
+    { "displayStyles", styles },
+    { "drawOptions", QJsonObject::fromVariantMap(
+                       m_tools["draw"]->property("drawOptions").toMap()) },
+    { "atomCount", static_cast<double>(m_molecule->atomCount()) },
+    { "bondCount", static_cast<double>(m_molecule->bondCount()) },
+    { "modified", !stack.isClean() },
+    { "canUndo", stack.canUndo() },
+    { "canRedo", stack.canRedo() }
+  };
 }
 
 bool WebController::setTool(const QString& name)
@@ -295,9 +588,11 @@ bool WebController::calculate(const QString& command, const QVariantMap& options
                                      "renderSolventExcluded", "renderOrbital",
                                      "renderElectronDensity", "renderCube" };
   if (m_calculating || m_molecule->atomCount() == 0 ||
-      (command != "optimize" && !surfaceCommands.contains(command)))
+      (!QStringList{ "optimize", "energy", "forces" }.contains(command) &&
+       !surfaceCommands.contains(command)))
     return false;
-  const QString id = command == "optimize" ? "Forcefield" : "Surfaces";
+  const QString id =
+    surfaceCommands.contains(command) ? "Surfaces" : "Forcefield";
   auto* extension = m_calculators.value(id);
   if (!extension)
     return false;
@@ -333,6 +628,8 @@ void WebController::replaceMolecule(std::unique_ptr<QtGui::Molecule> next)
   m_layers->addMolecule(m_molecule.get());
   m_view.setMolecule(m_molecule.get());
   for (auto* extension : m_calculators)
+    extension->setMolecule(m_molecule.get());
+  for (auto* extension : m_actionPlugins)
     extension->setMolecule(m_molecule.get());
   m_calculationMessage.clear();
   const auto styles = m_view.sceneModel().scenePlugins();
@@ -392,6 +689,66 @@ QJsonObject WebController::loadMolecule(const QString& text,
   return { { "ok", true },
            { "notice",
              multiple ? "Only the first molecule/frame was imported." : "" } };
+}
+
+QJsonObject WebController::insertFragment(const QString& sdf)
+{
+  if (m_calculating)
+    return failure(tr("Wait for the current calculation to finish."));
+  const auto info = Core::LayerManager::getMoleculeInfo(m_molecule.get());
+  if (!info || m_layers->layerLocked(info->layer.activeLayer()))
+    return failure(tr("The active layer is locked."));
+  if (sdf.size() > 32 * 1024 * 1024)
+    return failure(tr("The fragment exceeds the input limit."));
+  bool multiple = false;
+  const QString record = firstRecord(sdf, "sdf", multiple);
+  if (multiple || !record.section('\n', 1, 1).trimmed().endsWith("3D"))
+    return failure(tr("Insertion requires one 3D structure from PubChem."));
+  try {
+    QtGui::Molecule fragment;
+    auto& formats = Io::FileFormatManager::instance();
+    std::unique_ptr<Io::FileFormat> reader(
+      formats.newFormatFromFileExtension("sdf", Io::FileFormat::Read));
+    if (!reader || !reader->readString(record.toStdString(), fragment) ||
+        !fragment.atomCount() ||
+        fragment.atomPositions3d().size() != fragment.atomCount() ||
+        !std::all_of(
+          fragment.atomPositions3d().begin(), fragment.atomPositions3d().end(),
+          [](const Vector3& position) { return position.allFinite(); }))
+      return failure(tr("The returned 3D fragment could not be read."));
+    // The SDF reader records total radical multiplicity but cannot assign
+    // individual radical centers to the combined structure.
+    if (fragment.hasData("totalSpinMultiplicity"))
+      return failure(tr("Inserting radical fragments is unsupported."));
+    const auto atomOffset = m_molecule->atomCount();
+    const auto bondOffset = m_molecule->bondCount();
+    QtGui::Molecule combined;
+    combined = *m_molecule;
+    combined.undoMolecule()->appendMolecule(fragment, tr("Insert fragment"));
+    // appendMolecule copies positions, formal charges and bond orders.
+    // Preserve isotope labels and explicitly unknown stereo on the snapshot.
+    for (Index i = 0; i < fragment.atomCount(); ++i) {
+      if (const auto isotope = fragment.isotope(i))
+        combined.setIsotope(atomOffset + i, isotope);
+      if (Core::atomStereoUnspecified(fragment, i))
+        Core::setAtomStereoUnspecified(combined, atomOffset + i);
+    }
+    for (Index i = 0; i < fragment.bondCount(); ++i)
+      if (Core::bondStereoUnspecified(fragment, i))
+        Core::setBondStereoUnspecified(combined, bondOffset + i);
+    if (combined.hasData("totalCharge"))
+      combined.setData("totalCharge",
+                       m_molecule->data("totalCharge").toInt() +
+                         static_cast<int>(fragment.totalCharge()));
+    using Molecule = QtGui::Molecule;
+    m_molecule->undoMolecule()->modifyMolecule(
+      combined,
+      Molecule::Atoms | Molecule::Bonds | Molecule::Added | Molecule::Selection,
+      tr("Insert fragment"));
+    return { { "ok", true } };
+  } catch (const std::exception& error) {
+    return failure(QString::fromUtf8(error.what()));
+  }
 }
 
 QJsonObject WebController::exportMolecule(const QString& formatName) const

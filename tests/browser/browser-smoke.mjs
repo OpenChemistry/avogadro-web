@@ -2,13 +2,14 @@
 // Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 const url = process.argv[2] || 'http://127.0.0.1:8000';
+const offline = new URL(url).protocol === 'file:';
 const output = resolve(process.argv[3] || 'browser-evidence');
 const testWidgetUpdate = process.argv.includes('--widget-update');
 const testPlugins = process.argv.includes('--plugins');
@@ -25,6 +26,7 @@ const browser = spawn(process.env.CHROME_BINARY || 'google-chrome', [
 ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 let sequence = 0, buffer = '', session;
 const pending = new Map(), errors = [], checks = [];
+const externalRequests = new Set();
 browser.stderr.on('data', data => process.stderr.write(data));
 browser.stdio[4].on('data', data => {
   buffer += data.toString();
@@ -35,6 +37,10 @@ browser.stdio[4].on('data', data => {
       const request = pending.get(message.id); pending.delete(message.id);
       if (message.error) request?.reject(new Error(JSON.stringify(message.error)));
       else request?.resolve(message.result);
+    } else if (offline && message.method === 'Network.requestWillBeSent') {
+      const requestUrl = message.params.request.url;
+      if (requestUrl !== url && /^(file|https?):/.test(requestUrl))
+        externalRequests.add(requestUrl);
     } else if (message.method === 'Runtime.exceptionThrown') {
       errors.push(message.params.exceptionDetails.exception?.description || message.params.exceptionDetails.text);
       console.error(errors.at(-1));
@@ -83,6 +89,12 @@ try {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' }, null);
   ({ sessionId: session } = await send('Target.attachToTarget', { targetId, flatten: true }, null));
   await send('Runtime.enable'); await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.addEventListener('securitypolicyviolation', event => {
+      console.error('CSP violation', event.effectiveDirective, event.blockedURI, event.sample);
+    });
+  ` });
+  if (offline) await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: output }, null);
   if (testWidgetUpdate) {
@@ -168,10 +180,18 @@ try {
     assert.deepEqual(await inspect(), { atomCount: 0, bondCount: 0, modified: false, atoms: [], bonds: [] });
   await click('redo'); await wait(`document.querySelector('#counts').textContent.startsWith('5 atoms')`, 5000);
   checks.push('Undo/redo through HTML controls');
-  await click('new'); await wait(`document.querySelector('#discard-dialog').open`, 5000);
+  const openDiscardDialog = async () => {
+    await evaluate(`{ const button = document.querySelector('#new'); button.focus(); button.click(); }`);
+    await wait(`document.querySelector('#discard-dialog').open`, 5000);
+  };
+  await openDiscardDialog();
   await evaluate(`document.querySelector('#discard-dialog button[value="cancel"]').click()`);
+  // Wait for the close callback to finish and restore viewport focus.
+  await wait(`!document.querySelector('#discard-dialog').open &&
+    document.activeElement === document.querySelector('#viewport')`, 5000);
   assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('5 atoms')`), true);
-  await click('new'); await evaluate(`document.querySelector('#discard-dialog button[value="discard"]').click()`);
+  await openDiscardDialog();
+  await evaluate(`document.querySelector('#discard-dialog button[value="discard"]').click()`);
   await wait(`document.querySelector('#counts').textContent.startsWith('0 atoms')`, 5000);
   checks.push('Unsaved-change confirmation and cancellation');
   await set('element', '8'); await set('bond', '2');
@@ -203,12 +223,33 @@ try {
   const bad = join(profile, 'bad.cjson'); await writeFile(bad, 'not json'); await load(bad);
   await wait(`document.querySelector('#status').dataset.error === 'true'`, 5000);
   assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('2 atoms')`), true);
-  checks.push('Browser file input; failed import preserves document');
+  const oversized = join(profile, 'oversized.xyz');
+  await writeFile(oversized, '');
+  await truncate(oversized, 32 * 1024 * 1024 + 1);
+  await load(oversized);
+  await wait(`document.querySelector('#status').textContent.includes('32 MiB')`, 5000);
+  assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('2 atoms')`), true);
+  checks.push('Browser file input; malformed and oversized imports preserve the document');
   for (const format of ['mol', 'sdf', 'xyz']) { await set('format', format); await click('download'); }
   await delay(300);
   const files = await readdir(output);
   for (const extension of ['mol', 'sdf', 'xyz']) assert.ok(files.some(name => name.endsWith(`.${extension}`)));
   checks.push('MOL/SDF/XYZ downloads');
+  if (process.argv.includes('--action-plugins')) {
+    const commands = await evaluate(`Array.from(document.querySelector('#molecule-action').options, x => x.value)`);
+    for (const id of ['adjustHydrogens', 'removeAllHydrogens', 'selectAll', 'selectResidue', 'bondSelectedAtoms'])
+      assert.ok(commands.includes(id), id);
+    const threaded = await evaluate(`!document.querySelector('#force-field-label').hidden`);
+    assert.equal(commands.includes('energy'), threaded);
+    assert.equal(commands.includes('forces'), threaded);
+    await set('molecule-action', 'selectAll'); await click('run-action');
+    await wait(`!document.querySelector('#molecule-action option[value="bondSelectedAtoms"]').disabled`, 5000);
+    await set('molecule-action', 'removeAllHydrogens'); await click('run-action');
+    await wait(`!document.querySelector('#counts').textContent.startsWith('2 atoms')`, 5000);
+    await click('undo');
+    await wait(`document.querySelector('#counts').textContent.startsWith('2 atoms')`, 5000);
+    checks.push('Runtime action discovery, selection, hydrogen removal, undo and kit restrictions');
+  }
   if (testPlugins) {
     const tool = async id => {
       const selector = JSON.stringify(`[data-tool="${id}"]`);
@@ -440,6 +481,10 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false });
   await delay(300); await screenshot('loaded.png');
   checks.push('Camera input, fit, viewport resize');
+  if (offline) {
+    assert.deepEqual([...externalRequests], []);
+    checks.push('Standalone HTML starts and runs without requesting local assets or HTTP resources');
+  }
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'result.json'), JSON.stringify({ checks, errors }, null, 2));
   console.log(JSON.stringify({ passed: checks.length, checks }));

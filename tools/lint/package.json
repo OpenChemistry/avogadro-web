@@ -1,0 +1,13 @@
+{
+  "name": "avogadro-web-lint",
+  "private": true,
+  "scripts": {
+    "lint": "cd ../.. && tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.mjs .",
+    "format:check": "prettier --check eslint.config.mjs ../../tests/browser/import-corpus.mjs ../../tests/browser/playwright.config.mjs ../../tests/browser/playwright/*.mjs"
+  },
+  "devDependencies": {
+    "eslint": "10.15.0",
+    "globals": "17.3.0",
+    "prettier": "3.10.1"
+  }
+}
