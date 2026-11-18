@@ -1,0 +1,13 @@
+{
+  "wasm_multithread": {
+    "avogadro-web.wasm": 19922944,
+    "avogadro-web.wasm.gz": 7340032,
+    "package ZIP": 15728640
+  },
+  "wasm_singlethread": {
+    "avogadro-web.wasm": 18874368,
+    "avogadro-web.wasm.gz": 6815744,
+    "avogadro-offline.html": 9437184,
+    "package ZIP": 20971520
+  }
+}

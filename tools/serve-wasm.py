@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-from pathlib import Path
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import ClassVar
 from urllib.parse import urlsplit
 
 
 class Handler(SimpleHTTPRequestHandler):
-    extensions_map = {
+    extensions_map: ClassVar[dict[str, str]] = {
         **SimpleHTTPRequestHandler.extensions_map,
         ".wasm": "application/wasm",
     }
