@@ -100,6 +100,13 @@ In browsers with WebMCP enabled, Avogadro registers the read-only
 `inspect_molecule` tool. It returns atomic numbers, bond orders with zero-based
 atom indices, counts, and the unsaved status of the live molecule. Inspection
 runs in the tab and leaves the editor's undo stack and unsaved status intact.
+Agents can also list runtime capabilities and capture the viewport as PNG.
+To allow changes, enable **Allow agent edits for this session** in the Tool
+inspector. This permission expires on reload. Agent tools can choose a tool,
+theme or display style, undo, redo, delete selected atoms and run advertised
+molecule actions. Replacing the document, sending a lookup to a service and
+starting a calculation each require a separate confirmation. In a browser
+without WebMCP the editor retains its ordinary controls.
 
 ## Open and share molecule links
 

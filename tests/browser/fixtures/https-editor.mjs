@@ -18,10 +18,10 @@ const { default: puppeteer } = await import(process.env.PUPPETEER_MODULE || 'pup
 const contentTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.wasm': 'application/wasm', '.svg': 'image/svg+xml' };
 
-export async function openFixture(directory, routes) {
+export async function openFixture(directory, routes, browserArgs = [], isolated = false) {
   const browser = await puppeteer.launch({
     executablePath: process.env.CHROME_BINARY || '/usr/bin/google-chrome',
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--enable-unsafe-swiftshader', '--use-angle=swiftshader', ...browserArgs],
   });
   const page = await browser.newPage();
   const requestErrors = [];
@@ -35,7 +35,7 @@ export async function openFixture(directory, routes) {
   await page.setRequestInterception(true);
   page.on('request', async request => {
     const url = new URL(request.url());
-    if (url.protocol === 'data:' || url.protocol === 'blob:') return;
+    if (url.protocol === 'data:' || url.protocol === 'blob:') return request.continue();
     try {
       const respond = options => request.respond({ ...options, headers: {
         'access-control-allow-origin': '*', ...(options.headers || {}),
@@ -48,7 +48,10 @@ export async function openFixture(directory, routes) {
         const contentType = contentTypes[extname(name)];
         if (!contentType) return await request.respond({ status: 404 });
         const body = await readFile(join(directory, name));
-        await request.respond({ status: 200, contentType, body });
+        await request.respond({ status: 200, contentType, body, headers: isolated ? {
+          'Cross-Origin-Opener-Policy': 'same-origin',
+          'Cross-Origin-Embedder-Policy': 'require-corp',
+        } : {} });
       } else if (!request.isInterceptResolutionHandled()) {
         requestErrors.push(url.href);
         await request.abort();

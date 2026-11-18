@@ -314,3 +314,8 @@ The library revision pinned in CI includes the headless action plugins from
 [avogadrolibs PR #3377](https://github.com/OpenChemistry/avogadrolibs/pull/3377).
 For matching local builds, use `--action-plugins` with both
 `tests/check-build-profile.py` and `tests/browser/browser-smoke.mjs`.
+
+Test the WebMCP interface with `node tests/browser/webmcp-actions-smoke.mjs STAGE`.
+Pass `--threaded` for the multithreaded package. The test enables Chromium's
+WebMCP testing API, intercepts network requests and exercises consent, viewport
+capture, cancellation, session revocation and operation without WebMCP.

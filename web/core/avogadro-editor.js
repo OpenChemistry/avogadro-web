@@ -35,6 +35,10 @@ export class AvogadroEditor extends EventTarget {
   setPickedLabel(label) {
     if (!this.instance.setPickedLabel(label)) throw new Error('Pick an atom to label.');
   }
+  captureViewport() {
+    if (typeof this.instance.captureViewport !== 'function') throw new Error('Viewport capture is unavailable.');
+    return this.check(JSON.parse(this.instance.captureViewport()));
+  }
   runAction(id, options = {}) {
     if (typeof this.instance.runAction !== 'function') throw new Error('Actions are unavailable in this build.');
     return this.check(JSON.parse(this.instance.runAction(id, JSON.stringify(options))));

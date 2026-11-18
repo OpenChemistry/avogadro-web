@@ -274,6 +274,7 @@ jobs:
           tests=openchemistry/avogadro-web/tests/browser
           if [[ "$QT_WASM_KIT" == wasm_singlethread ]]; then
             node "$tests/molecule-import.test.mjs"
+            node "$tests/webmcp-actions-smoke.mjs" "$package"
             node "$tests/molecule-import-smoke.mjs" "$package"
             node "$tests/share-link.test.mjs"
             node "$tests/share-link-smoke.mjs" "$package"
@@ -285,6 +286,7 @@ jobs:
             node "$tests/browser-smoke.mjs" "file://$offline_dir/avogadro-offline.html" "$RUNNER_TEMP/browser-evidence"
             (cd "$package" && exec python3 -m http.server 8000 --bind 127.0.0.1) &
           else
+            node "$tests/webmcp-actions-smoke.mjs" "$package" --threaded
             node "$tests/startup-failures.mjs" "$package"
             (cd "$package" && exec python3 serve-wasm.py) &
           fi

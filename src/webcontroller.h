@@ -28,6 +28,7 @@ public:
   explicit WebController(QtOpenGL::GLWidget& view, QObject* parent = nullptr);
   ~WebController() override;
   QJsonObject state() const;
+  QJsonObject captureViewport() const;
   QtGui::Molecule& molecule() const;
   bool setTool(const QString& name);
   bool setDisplayStyle(const QString& id, bool enabled);

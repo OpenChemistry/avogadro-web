@@ -41,6 +41,10 @@ std::string state()
 {
   return json(controller->state());
 }
+std::string captureViewport()
+{
+  return json(controller->captureViewport());
+}
 bool setTool(std::string name)
 {
   return controller->setTool(QString::fromStdString(name));
@@ -139,6 +143,7 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("updateViewportForTest", &updateViewport);
   emscripten::function("atomPositionForTest", &atomPosition);
 #endif
+  emscripten::function("captureViewport", &captureViewport);
   emscripten::function("editorState", &state);
   emscripten::function("setTool", &setTool);
   emscripten::function("setDisplayStyle", &setDisplayStyle);

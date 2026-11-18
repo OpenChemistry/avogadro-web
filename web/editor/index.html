@@ -248,6 +248,7 @@
                 /></label>
                 <button type="submit">Apply label</button>
               </form>
+              <label id="agent-control" class="check" hidden><input id="allow-agent-edits" type="checkbox" autocomplete="off" />Allow agent edits for this session</label>
               <fieldset id="molecule-actions" hidden>
                 <legend>Molecule actions</legend>
                 <label>Action<select id="molecule-action"></select></label>
@@ -348,6 +349,14 @@
       ><button id="cancel-lookup" class="quiet" hidden>Cancel lookup</button
       ><span class="footer-brand">AVOGADRO WEB</span>
     </footer>
+    <dialog id="agent-dialog" aria-labelledby="agent-title">
+      <h2 id="agent-title">Agent request</h2>
+      <p id="agent-request"></p>
+      <div class="dialog-actions">
+        <button id="agent-deny" type="button" autofocus>Cancel</button>
+        <button id="agent-approve" type="button">Allow once</button>
+      </div>
+    </dialog>
     <dialog id="lookup-dialog" aria-labelledby="lookup-title">
       <h2 id="lookup-title">Look up a molecule</h2>
       <form id="lookup-form">

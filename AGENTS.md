@@ -130,12 +130,11 @@ JavaScript.
 
 ### WebMCP
 
-In browsers with WebMCP, `editor.js` registers a single tool,
-`inspect_molecule`. It is **read-only**: it reads `state` and a CJSON export
-and must not change the molecule, the undo stack or the unsaved marker.
-Anything returned to an agent is built from runtime data, never from page
-text. Adding a tool that edits the document, or that reaches outside the
-tab, needs discussion first. Test with `browser-smoke.mjs --webmcp`.
+WebMCP tools read the live runtime state. Keep inspection and viewport capture
+read-only. Editing requires a session opt-in, and document replacement, remote
+lookups and each calculation require an explicit confirmation. Use the same
+validated commands and import resolver as the ordinary editor. Test both kits
+with `webmcp-actions-smoke.mjs` and inspection with `browser-smoke.mjs --webmcp`.
 
 ## Rules for C++
 

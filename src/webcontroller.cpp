@@ -2,6 +2,7 @@
 #include "webcontroller.h"
 
 #include <QAction>
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QMouseEvent>
@@ -413,6 +414,27 @@ void WebController::pan(double x, double y)
 QtGui::Molecule& WebController::molecule() const
 {
   return *m_molecule;
+}
+
+QJsonObject WebController::captureViewport() const
+{
+  if (m_calculating)
+    return failure(tr("Wait for the current calculation to finish."));
+  auto image = m_view.grabFramebuffer();
+  if (image.isNull())
+    return failure(tr("The viewport image is unavailable."));
+  if (image.width() > 1024 || image.height() > 1024)
+    image =
+      image.scaled(1024, 1024, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+  QBuffer buffer;
+  buffer.open(QIODevice::WriteOnly);
+  if (!image.save(&buffer, "PNG"))
+    return failure(tr("Could not encode the viewport image."));
+  return { { "ok", true },
+           { "mimeType", "image/png" },
+           { "width", image.width() },
+           { "height", image.height() },
+           { "data", QString::fromLatin1(buffer.data().toBase64()) } };
 }
 
 void WebController::touchPointer(const QString& phase, double x, double y,

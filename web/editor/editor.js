@@ -141,7 +141,7 @@ function showToolTooltip(button, text) {
   toolTooltip.hidden = false;
 }
 
-async function registerMoleculeTool() {
+async function registerEditorTools() {
   const context = document.modelContext ?? navigator.modelContext;
   if (typeof context?.registerTool !== 'function') return;
 
@@ -169,6 +169,142 @@ async function registerMoleculeTool() {
       }
     },
   });
+  $('agent-control').hidden = false;
+  const consent = $('allow-agent-edits');
+  consent.checked = false;
+  consent.addEventListener('change', () => {
+    if (!consent.checked) {
+      if ($('agent-dialog').open) $('agent-dialog').close('cancel');
+      cancelLookup();
+    }
+  });
+  let active = false;
+  const string = { type: 'string' };
+  const choice = values => ({ type: 'string', enum: values });
+  function confirmRequest(prompt) {
+    const dialog = $('agent-dialog');
+    $('agent-request').textContent = prompt;
+    dialog.returnValue = 'cancel';
+    return new Promise(resolve => {
+      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'allow'), { once: true });
+      dialog.showModal();
+    });
+  }
+  $('agent-deny').onclick = () => $('agent-dialog').close('cancel');
+  $('agent-approve').onclick = event => {
+    if (event.isTrusted) $('agent-dialog').close('allow');
+  };
+
+  async function tool(name, description, properties, required, edits, execute) {
+    await context.registerTool({
+      name, description, inputSchema: { type: 'object', properties, required, additionalProperties: false },
+      annotations: { readOnlyHint: !edits },
+      async execute(input) {
+        if (!input || typeof input !== 'object' || Array.isArray(input) ||
+            Object.keys(input).some(key => !Object.hasOwn(properties, key)) ||
+            required.some(key => !Object.hasOwn(input, key))) return { error: 'Invalid tool arguments.' };
+        for (const [key, value] of Object.entries(input)) {
+          const type = properties[key];
+          if (type.type === 'array') {
+            if (!Array.isArray(value) || value.length !== type.maxItems || value.some(n => !Number.isFinite(n)))
+              return { error: 'Invalid tool arguments.' };
+            continue;
+          }
+          if (typeof value !== type.type || type.enum && !type.enum.includes(value) ||
+              type.maxLength && value.length > type.maxLength) return { error: 'Invalid tool arguments.' };
+        }
+        if (!runtimeReady) return { error: 'The editor is unavailable.' };
+        if (edits && !consent.checked) return { error: 'Enable agent edits in the Tool inspector for this session.' };
+        if (edits && (active || busy || pendingImport || editor.state.calculating)) return { error: 'The editor is busy.' };
+        if (edits) active = true;
+        try {
+          const result = await execute(input);
+          if (edits) render(editor.state);
+          return result ?? { ok: true };
+        } catch (error) {
+          return { error: error.message || 'The tool could not complete.' };
+        } finally {
+          if (edits) active = false;
+        }
+      },
+    });
+  }
+  async function authorize(prompt) {
+    if (!(await confirmRequest(prompt)) || !consent.checked || !runtimeReady || busy || editor.state.calculating)
+      throw new Error('Request cancelled.');
+  }
+  await tool('editor_capabilities', 'List available editor tools, display styles and molecule actions.', {}, [], false, () => {
+    const { tools, displayStyles, actions, canOptimize, canRenderSurfaces } = editor.state;
+    return { tools, displayStyles, actions, canOptimize, canRenderSurfaces };
+  });
+  if (typeof editor.instance.captureViewport === 'function')
+    await tool('capture_viewport', 'Capture the molecular viewport as a PNG, at most 1024 pixels on either side.', {}, [], false,
+      () => editor.captureViewport());
+  await tool('set_editor_tool', 'Activate an advertised editing tool.', { id: string }, ['id'], true, ({ id }) => editor.setTool(id));
+  await tool('set_editor_theme', 'Change the editor theme.', { theme: choice(['light', 'dark']) }, ['theme'], true, ({ theme }) => {
+    document.documentElement.dataset.theme = theme;
+    applyTheme();
+  });
+  await tool('set_display_style', 'Enable or disable an advertised display style.',
+    { id: string, enabled: { type: 'boolean' } }, ['id', 'enabled'], true, ({ id, enabled }) => editor.setDisplayStyle(id, enabled));
+  await tool('edit_molecule', 'Undo, redo or delete selected atoms in the current document.',
+    { operation: choice(['undo', 'redo', 'deleteSelection']) }, ['operation'], true, ({ operation }) => editor[operation]());
+  await tool('load_molecule', 'Replace the current molecule after confirmation. Supply molecule text in a supported format.',
+    { format: choice(['cjson', 'mol', 'sdf', 'xyz', 'pdb', 'fchk', 'molden', 'cube']), text: { type: 'string', maxLength: maxImportBytes } },
+    ['format', 'text'], true, async ({ format, text }) => {
+      if (new TextEncoder().encode(text).length > maxImportBytes) throw new Error('Molecule exceeds the input limit.');
+      await authorize(`Replace the current molecule with agent-supplied ${format.toUpperCase()} data? Any unsaved edits will be discarded.`);
+      installMolecule({ text, format, filename: `Agent molecule.${format}` });
+    });
+  if (supportsRemoteImport(location))
+    await tool('lookup_molecule', 'Look up a molecule with approval for the receiving service and document replacement.',
+      { kind: choice(['name', 'cid', 'smiles', 'inchi', 'pdb', 'url']), value: { type: 'string', maxLength: 2048 }, format: string },
+      ['kind', 'value'], true, async input => {
+        const request = prepareImport(input, location, extraImportOrigins);
+        await authorize(`Send “${input.value}” to ${request.url.origin} and open the result in this document?`);
+        if (!await importRemote(request)) throw new Error('Lookup cancelled or failed.');
+      });
+  if (supportsRemoteImport(location) && typeof editor.instance.insertFragment === 'function')
+    await tool('insert_fragment', 'Insert a PubChem 3D fragment into the current molecule after approval to send the identifier.',
+      { kind: choice(['smiles', 'inchi']), value: { type: 'string', maxLength: 2048 } }, ['kind', 'value'], true,
+      async input => {
+        const request = prepareImport(input, location);
+        await authorize(`Send “${input.value}” to ${request.url.origin} and insert the returned 3D fragment into this molecule?`);
+        if (!await importRemote(request, true)) throw new Error('Insertion cancelled or failed.');
+      });
+  if (editor.state.canOptimize)
+    await tool('optimize_geometry', 'Request user approval to optimize the molecular geometry.',
+      { method: choice(['UFF', 'LJ']) }, ['method'], true, async ({ method }) => {
+        await authorize(`Start geometry optimization with ${method}?`);
+        editor.calculate('optimize', { method });
+      });
+  if (editor.state.canRenderSurfaces)
+    await tool('render_molecule_surface', 'Request user approval to compute a molecular surface.',
+      { type: choice(['renderVDW', 'renderSolventAccessible', 'renderSolventExcluded', 'renderOrbital', 'renderElectronDensity', 'renderCube']),
+        orbital: { type: 'number' } }, ['type'], true, async ({ type, orbital }) => {
+        const state = editor.state;
+        if (type === 'renderOrbital' ? !Number.isInteger(orbital) || orbital < 1 || orbital > state.orbitalCount :
+            orbital !== undefined) throw new Error('Invalid orbital selection.');
+        if (type === 'renderElectronDensity' && !state.orbitalCount || type === 'renderCube' && !state.cubeCount)
+          throw new Error('Surface data is unavailable.');
+        await authorize(`Start the ${type} calculation?`);
+        const options = { resolution: ['renderOrbital', 'renderElectronDensity'].includes(type) ? 0.25 : 0.15 };
+        if (orbital !== undefined) options.orbital = orbital;
+        editor.calculate(type, options);
+      });
+  await tool('run_molecule_action', 'Run an enabled molecule action. Calculations require a separate user confirmation.',
+    { id: string, argument: { type: 'string', maxLength: 32 }, index: { type: 'number' },
+      vectors: { type: 'array', items: { type: 'number' }, minItems: 9, maxItems: 9 },
+      repeats: { type: 'array', items: { type: 'integer' }, minItems: 3, maxItems: 3 } },
+    ['id'], true, async ({ id, ...args }) => {
+      const item = editor.state.actions.find(action => action.id === id && action.enabled);
+      if (!item) throw new Error('Unavailable action or invalid arguments.');
+      const key = ['element', 'residue'].includes(item.argument) ? 'argument' : item.argument;
+      if (Object.keys(args).length !== (key ? 1 : 0) || key && !Object.hasOwn(args, key))
+        throw new Error('Invalid action arguments.');
+      if (item.calculation) await authorize(`Start this calculation now? ${item.label}`);
+      return editor.runAction(id, key ? { [item.argument]: args[key] } : {});
+    });
 }
 
 function setupPlugins(state) {
@@ -624,7 +760,7 @@ try {
   $('loading').hidden = true; setReady(true); applyTheme();
   render(editor.state);
   loadStartupLink();
-  registerMoleculeTool().catch(error => console.warn('Unable to register the Avogadro WebMCP tool.', error));
+  registerEditorTools().catch(error => console.warn('Unable to register the Avogadro WebMCP tool.', error));
 } catch (error) {
   console.error(error);
   setReady(false);
