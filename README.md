@@ -93,57 +93,67 @@ Keep `avogadro-web.js`, `avogadro-web.wasm`, `qtloader.js`, and any `.data` or
 worker JavaScript files from the same package together. `build-manifest.json`
 identifies the source revisions and toolchain used to build that package.
 
-Start by adapting `index.html`, `editor.css`, and `editor.js`. The
-`AvogadroEditor` class at the top of `editor.js` wraps the runtime's bindings
-with JavaScript methods and `statechange` events. The rest of that file wires
-the example page's controls to the editor. For a different page structure,
-copy the wrapper into your own module; importing the existing `editor.js`
-also starts the example interface and expects its HTML elements to exist.
+Import the reusable module at `core/avogadro-editor.js`. The full editor at
+`index.html` uses this same module and adds its own controls, styles, and
+WebMCP integration. A custom page needs the core module, the runtime files
+listed above, and a viewport with a nonzero width and height.
 
 ### Initialize a viewport
 
-For a minimal custom page, place this beside the runtime files and serve it
-with the same headers as the included editor:
+Save the following three files at the root of the unpacked WASM package.
+Start the included server with `python3 serve-wasm.py` and open
+`http://127.0.0.1:8000/viewer.html`. See the
+[self-hosting guide](docs/self-hosting.md) for other servers.
+
+`viewer.html`
 
 ```html
 <!doctype html>
 <html lang="en">
-<meta charset="utf-8">
-<title>My molecular viewer</title>
-<div id="viewport" tabindex="0" style="width: 100%; height: 70vh"></div>
-<pre id="status" role="status"></pre>
-<script src="avogadro-web.js"></script>
-<script src="qtloader.js"></script>
-<script type="module">
-  const viewport = document.getElementById('viewport');
-  const status = document.getElementById('status');
-  try {
-    const instance = await qtLoad({
-      qt: {
-        containerElements: [viewport],
-        entryFunction: globalThis.createAvogadroWeb,
-        onExit: () => { status.textContent = 'The molecular viewer stopped.'; },
-      },
-    });
-    const renderState = text => {
-      const state = JSON.parse(text);
-      status.textContent = `${state.atomCount} atoms, ${state.bondCount} bonds`;
-    };
-    instance.onEditorStateChanged = renderState;
-    new ResizeObserver(() => instance.qtResizeContainerElement(viewport))
-      .observe(viewport);
-
-    const xyz = '3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n';
-    const result = JSON.parse(instance.loadMolecule(xyz, 'xyz'));
-    if (!result.ok) throw new Error(result.error);
-    instance.resetCamera();
-    renderState(instance.editorState());
-  } catch (error) {
-    status.textContent = error.message;
-  }
-</script>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Avogadro molecule viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <p id="viewer-error" role="alert"></p>
+  <div id="viewport" tabindex="0" aria-label="Molecule viewport"></div>
+  <script src="avogadro-web.js"></script>
+  <script src="qtloader.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
 </html>
 ```
+
+`viewer.css`
+
+```css
+#viewport {
+  height: 70vh;
+}
+```
+
+`viewer.js`
+
+```js
+import { createAvogadroEditor } from './core/avogadro-editor.js';
+
+try {
+  const editor = await createAvogadroEditor(document.querySelector('#viewport'));
+  editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
+  editor.setTool('navigate');
+} catch (error) {
+  document.querySelector('#viewer-error').textContent = error.message;
+}
+```
+
+The factory checks browser support, initializes the Qt runtime, and handles
+viewport resizing and wheel zoom. Pass `{ wheelZoom: false }` to let users
+scroll the surrounding page while the pointer is over the viewport. The optional
+second argument also accepts `onExit(details)`, `print(text)`, and `printErr(text)` callbacks. If you
+initialize Qt yourself, wrap the instance with
+`new AvogadroEditor(instance)` using the class exported by the core module.
 
 ### Control the molecule
 
@@ -166,30 +176,14 @@ The `AvogadroEditor` wrapper provides:
   progress.
 
 The wrapper parses JSON results and raises errors for rejected operations.
-When calling the runtime directly, as in the example above, parse JSON results
-and check `ok` yourself. Calculation completion is reported through state
-changes; disable conflicting controls while `state.calculating` is true.
+Calculation completion is reported through state changes. Disable conflicting
+controls while `state.calculating` is true.
 Your application should handle unsaved changes before replacing a document.
 
 ## Host your application
 
-Serve the application over HTTPS (or localhost during development) with
-cross-origin isolation. Configure the server to send:
-
-```text
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-Cross-Origin-Resource-Policy: same-origin
-```
-
-Serve `.wasm` as `application/wasm`. If serving the optional compressed WASM
-file, send `Content-Encoding: gzip` only for gzip-compressed bytes. Keep the
-runtime files together, and keep `avogadro2.svg` alongside the included editor.
-A plain `python -m http.server` does not supply the required isolation headers;
-use `serve-wasm.py` for local development.
-
-The editor is hosted at <https://web.avogadro.cc/>, a GitHub Pages site behind
-Cloudflare, which adds the isolation headers.
+See the [self-hosting guide](docs/self-hosting.md) for server configuration
+and deployment instructions.
 
 ## Build from source
 

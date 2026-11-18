@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// PUPPETEER_MODULE=... node tests/ui-smoke.mjs URL EVIDENCE_DIRECTORY
+// PUPPETEER_MODULE=... node tests/browser/ui-smoke.mjs URL EVIDENCE_DIRECTORY
 // Uses a fresh browser profile and the real supplied WASM runtime.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';

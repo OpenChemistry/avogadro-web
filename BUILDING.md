@@ -5,13 +5,14 @@
 Tests use fresh profiles and never attach to a user's browser. Chromium's test
 uses Node's built-in APIs. Firefox and startup-failure tests use `puppeteer-core`
 (optionally located by `PUPPETEER_MODULE`). Firefox can run inside `xvfb-run` for
-software rendering on Linux. The commands below run the checks against the supplied build.
+software rendering on Linux. The startup test serves its own standalone core
+fixture alongside the staged build and also verifies three startup error messages.
 
 ```sh
-node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 evidence/chromium
-xvfb-run -a node avogadro-web/tests/firefox-smoke.mjs \
+node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence/chromium
+xvfb-run -a node avogadro-web/tests/browser/firefox-smoke.mjs \
   http://127.0.0.1:8000 evidence/firefox
-node avogadro-web/tests/startup-failures.mjs stage-web-new/share/avogadro-web
+node avogadro-web/tests/browser/startup-failures.mjs stage-web-new/share/avogadro-web
 python3 avogadro-web/tests/check-build-profile.py build-web-new
 ```
 
@@ -19,14 +20,14 @@ To include the external `QWidget::update()` regression, build WASM with
 `-DENABLE_TESTING=ON`, serve that build, and run:
 
 ```sh
-node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 evidence/widget-update --widget-update
+node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence/widget-update --widget-update
 ```
 
 For the tool and display tests, serve a WASM build made with
 `-DENABLE_TESTING=ON` and run:
 
 ```sh
-node avogadro-web/tests/browser-smoke.mjs http://127.0.0.1:8000 evidence/plugins --plugins
+node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence/plugins --plugins
 ```
 
 
@@ -121,5 +122,21 @@ Avogadro library installation. Use a fresh build directory. No source files or C
 Workspace UI checks (use a runtime with the current plugins):
 
 ```sh
-node avogadro-web/tests/ui-smoke.mjs http://127.0.0.1:8000 evidence/ui --full-runtime
+node avogadro-web/tests/browser/ui-smoke.mjs http://127.0.0.1:8000 evidence/ui --full-runtime
 ```
+
+## Optional toolkit layout
+
+Place browser adapters and workers under `web/toolkits/<toolkit>/`.
+Use `thirdparty/<toolkit>/` for any toolkit build recipe or native bridge
+maintained here. A toolkit can ship its own JavaScript and WASM as optional,
+self-hosted assets. The host can explicitly enable staged tools and start a
+toolkit worker when the user first invokes one of its operations.
+
+The [Open Babel worker proposal](https://github.com/OpenChemistry/avogadro-web/pull/19)
+on `codex/openbabel-web` shows how to load WASM on demand and reject stale
+results before applying them to the document. [RDKit.js MinimalLib](https://github.com/rdkit/rdkit/blob/master/Code/MinimalLib/README.md)
+is a candidate for a second adapter with its own WASM module. Keep the worker
+interfaces toolkit-specific until two implementations show what they share.
+
+See the [integration examples plan](examples/README.md) for host applications.
