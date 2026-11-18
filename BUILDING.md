@@ -157,3 +157,8 @@ is a candidate for a second adapter with its own WASM module. Keep the worker
 interfaces toolkit-specific until two implementations show what they share.
 
 See the [integration examples plan](examples/README.md) for host applications.
+
+Run `python3 tests/check-page-security.py` to check the shipped page and its
+JavaScript for forbidden DOM sinks and inline handlers. The Chromium smoke test
+records CSP violations from the first navigation through document editing. Run
+it against both served kits and the standalone single-threaded HTML file.

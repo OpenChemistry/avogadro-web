@@ -2,7 +2,7 @@
 // Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -89,6 +89,11 @@ try {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' }, null);
   ({ sessionId: session } = await send('Target.attachToTarget', { targetId, flatten: true }, null));
   await send('Runtime.enable'); await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.addEventListener('securitypolicyviolation', event => {
+      console.error('CSP violation', event.effectiveDirective, event.blockedURI, event.sample);
+    });
+  ` });
   if (offline) await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: output }, null);
@@ -210,7 +215,13 @@ try {
   const bad = join(profile, 'bad.cjson'); await writeFile(bad, 'not json'); await load(bad);
   await wait(`document.querySelector('#status').dataset.error === 'true'`, 5000);
   assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('2 atoms')`), true);
-  checks.push('Browser file input; failed import preserves document');
+  const oversized = join(profile, 'oversized.xyz');
+  await writeFile(oversized, '');
+  await truncate(oversized, 32 * 1024 * 1024 + 1);
+  await load(oversized);
+  await wait(`document.querySelector('#status').textContent.includes('32 MiB')`, 5000);
+  assert.equal(await evaluate(`document.querySelector('#counts').textContent.startsWith('2 atoms')`), true);
+  checks.push('Browser file input; malformed and oversized imports preserve the document');
   for (const format of ['mol', 'sdf', 'xyz']) { await set('format', format); await click('download'); }
   await delay(300);
   const files = await readdir(output);
