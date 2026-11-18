@@ -96,6 +96,26 @@ In browsers with WebMCP enabled, Avogadro registers the read-only
 atom indices, counts, and the unsaved status of the live molecule. Inspection
 runs in the tab and leaves the editor's undo stack and unsaved status intact.
 
+## Open and share molecule links
+
+Add one source to the editor URL using `pdb`, `cid`, `name`, `smiles`, or
+`url`. For example, `?pdb=1CRN&style=cartoon&mode=view` opens an RCSB entry
+after you approve the lookup. For HTTPS files, add `type=sdf` (or another
+supported extension) when the path does not identify the file format.
+Use percent-encoding for special characters in parameter values.
+
+Links can set an available display `style` or `tool`, a `theme` of
+`light` or `dark`, and a `mode` of `edit` or `view`. View mode hides
+editing controls and supports Navigate and Measure. `stick`, `sphere`,
+`line`, and `cartoon` are supported display aliases. Calculations require
+an action in the editor.
+
+**Copy link** uses a source identifier when the fetched document is unchanged.
+Other molecules are included as a compressed CJSON snapshot. The generated
+source or snapshot stays in the URL fragment, which browsers omit from HTTP
+requests. When a snapshot exceeds 1 MiB expanded or would require a link longer
+than 8192 characters, **Copy link** downloads it as CJSON.
+
 ## Build an application with the WASM package
 
 The package contains the compiled Avogadro runtime and an example HTML/JavaScript

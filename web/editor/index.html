@@ -104,6 +104,7 @@
           </section>
         </div>
       </fieldset>
+      <button id="copy-link" class="quiet" hidden disabled>Copy link</button>
       <button
         id="theme"
         class="icon-button"
@@ -360,6 +361,20 @@
           <button type="submit" class="primary">Fetch molecule</button>
         </div>
       </form>
+    </dialog>
+    <dialog id="link-lookup-dialog" aria-labelledby="link-lookup-title">
+      <h2 id="link-lookup-title">Fetch the molecule in this link?</h2>
+      <p id="link-lookup-privacy"></p>
+      <form method="dialog">
+        <button value="cancel" autofocus>Cancel</button>
+        <button value="fetch" class="primary">Fetch molecule</button>
+      </form>
+    </dialog>
+    <dialog id="copy-link-dialog" aria-labelledby="copy-link-title">
+      <h2 id="copy-link-title">Share molecule link</h2>
+      <p>Copy the selected link.</p>
+      <label>Molecule link <input id="share-link-value" type="text" readonly autofocus /></label>
+      <form method="dialog"><button>Close</button></form>
     </dialog>
     <dialog id="discard-dialog" aria-labelledby="discard-title">
       <div class="section-eyebrow">UNSAVED MOLECULE</div>

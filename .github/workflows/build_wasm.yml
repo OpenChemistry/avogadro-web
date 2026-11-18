@@ -181,7 +181,7 @@ jobs:
 
           package = Path(os.environ['RUNNER_TEMP']) / 'stage-wasm/share/avogadro-web'
           required = [
-              'index.html', 'editor.css', 'editor.js', 'molecule-import.js', 'icons/avogadro2.svg',
+              'index.html', 'editor.css', 'editor.js', 'molecule-import.js', 'share-link.js', 'icons/avogadro2.svg',
               'core/avogadro-editor.js', 'qtloader.js',
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
               'README.md', 'docs/self-hosting.md', 'serve-wasm.py',
@@ -246,6 +246,8 @@ jobs:
           if [[ "$QT_WASM_KIT" == wasm_singlethread ]]; then
             node "$tests/molecule-import.test.mjs"
             node "$tests/molecule-import-smoke.mjs" "$package"
+            node "$tests/share-link.test.mjs"
+            node "$tests/share-link-smoke.mjs" "$package"
             node "$tests/startup-failures.mjs" "$package" --single-threaded
             offline_dir=$(mktemp -d "$RUNNER_TEMP/offline.XXXXXX")
             cp "$package/avogadro-offline.html" "$offline_dir/"

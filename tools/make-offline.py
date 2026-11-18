@@ -23,6 +23,7 @@ def bundle(directory):
     for specifier, source in (
         (b"./core/avogadro-editor.js", core),
         (b"./molecule-import.js", (directory / "molecule-import.js").read_bytes()),
+        (b"./share-link.js", (directory / "share-link.js").read_bytes()),
     ):
         pattern = rb"^import \{[^\n]+\} from '" + re.escape(specifier) + rb"';$"
         editor, count = re.subn(pattern, lambda match: source, editor, flags=re.MULTILINE)

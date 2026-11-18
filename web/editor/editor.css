@@ -841,3 +841,16 @@ body.inspector-collapsed #inspector {
   justify-content: flex-end;
   gap: 8px;
 }
+
+#copy-link-dialog form {
+  margin-top: 12px;
+}
+body[data-mode="view"] .tool-rail,
+body[data-mode="view"] #inspector,
+body[data-mode="view"] #inspector-toggle,
+body[data-mode="view"] #document-controls {
+  display: none;
+}
+body[data-mode="view"] main {
+  grid-template-columns: minmax(0, 1fr);
+}

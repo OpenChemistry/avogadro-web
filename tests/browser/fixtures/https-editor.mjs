@@ -59,6 +59,7 @@ export async function openFixture(directory, routes) {
     }
   });
   async function go(path = '/') {
+    await page.goto('about:blank');
     await page.goto(origin + path);
     await page.waitForFunction(() => !document.getElementById('controls').disabled);
   }
