@@ -117,6 +117,7 @@ Start the included server with `python3 serve-wasm.py` and open
   <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
+  <p id="viewer-error" role="alert"></p>
   <div id="viewport" tabindex="0" aria-label="Molecule viewport"></div>
   <script src="avogadro-web.js"></script>
   <script src="qtloader.js"></script>
@@ -138,14 +139,19 @@ Start the included server with `python3 serve-wasm.py` and open
 ```js
 import { createAvogadroEditor } from './core/avogadro-editor.js';
 
-const editor = await createAvogadroEditor(document.querySelector('#viewport'));
-editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
-editor.setTool('navigate');
+try {
+  const editor = await createAvogadroEditor(document.querySelector('#viewport'));
+  editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
+  editor.setTool('navigate');
+} catch (error) {
+  document.querySelector('#viewer-error').textContent = error.message;
+}
 ```
 
 The factory checks browser support, initializes the Qt runtime, and handles
-viewport resizing and wheel zoom. The optional second argument accepts
-`onExit(details)`, `print(text)`, and `printErr(text)` callbacks. If you
+viewport resizing and wheel zoom. Pass `{ wheelZoom: false }` to let users
+scroll the surrounding page while the pointer is over the viewport. The optional
+second argument also accepts `onExit(details)`, `print(text)`, and `printErr(text)` callbacks. If you
 initialize Qt yourself, wrap the instance with
 `new AvogadroEditor(instance)` using the class exported by the core module.
 

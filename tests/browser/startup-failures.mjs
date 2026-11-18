@@ -54,6 +54,57 @@ try {
     document.querySelector('#qt-shadow-container')?.shadowRoot
       ?.querySelector('canvas')?.clientWidth === width, {}, initialWidth - 160);
   console.log('PASS: standalone core startup, molecule round trip, statechange and resize');
+  const wheelResult = await corePage.evaluate(async () => {
+    const { instance } = await globalThis.coreReady;
+    const canvas = document.querySelector('#qt-shadow-container').shadowRoot.querySelector('canvas');
+    const deltas = [];
+    let reads = 0;
+    const read = instance.editorState;
+    instance.editorState = () => { ++reads; return read(); };
+    instance.zoom = delta => deltas.push(delta);
+    const wheel = () => canvas.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: 60, bubbles: true, composed: true, cancelable: true,
+    }));
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    const calculating = value => instance.onEditorStateChanged(JSON.stringify({ calculating: value }));
+    wheel();
+    wheel();
+    await frame();
+    wheel();
+    calculating(true);
+    await frame();
+    wheel();
+    await frame();
+    calculating(false);
+    wheel();
+    await frame();
+    return { reads, deltas };
+  });
+  assert.deepEqual(wheelResult, { reads: 0, deltas: [-1, -0.5] });
+  console.log('PASS: wheel coalescing and calculation transitions without state polling');
+
+  await corePage.goto(`${origin()}/core-fixture.html?scroll`);
+  await corePage.waitForFunction(() => !!globalThis.coreReady);
+  await corePage.evaluate(async () => {
+    const editor = await globalThis.coreReady;
+    editor.loadMolecule('3\nWater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n', 'xyz');
+    document.body.style.minHeight = '200vh';
+    globalThis.zoomCalls = 0;
+    editor.instance.zoom = () => { ++globalThis.zoomCalls; };
+  });
+  await corePage.waitForFunction(canvasWidth);
+  const surface = await corePage.evaluateHandle(() =>
+    document.querySelector('#qt-shadow-container').shadowRoot.querySelector('canvas'));
+  await surface.asElement().hover();
+  await corePage.evaluate(() => {
+    globalThis.qtWheelEvents = 0;
+    document.querySelector('#qt-shadow-container').shadowRoot.addEventListener('wheel',
+      () => { ++globalThis.qtWheelEvents; }, { capture: true });
+  });
+  await corePage.mouse.wheel({ deltaY: 100 });
+  await corePage.waitForFunction(() => scrollY > 0);
+  assert.deepEqual(await corePage.evaluate(() => [zoomCalls, qtWheelEvents]), [0, 0]);
+  console.log('PASS: native page scrolling over the Qt canvas with wheelZoom disabled');
   await corePage.close();
 
   for (const [name, expected] of [['isolation', 'cross-origin isolation'], ['webgl', 'WebGL 2 is unavailable'], ['missing-wasm', 'wasm']]) {

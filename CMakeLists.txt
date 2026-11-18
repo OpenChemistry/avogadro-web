@@ -46,9 +46,16 @@ if(EMSCRIPTEN)
   foreach(asset index.html editor.js editor.css)
     configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
   endforeach()
-  file(COPY web/editor/data web/editor/icons
-    DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-    PATTERN ".gitkeep" EXCLUDE)
+  foreach(asset_dir data icons)
+    file(MAKE_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset_dir}")
+    file(GLOB_RECURSE assets CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/web/editor"
+      "web/editor/${asset_dir}/*")
+    foreach(asset IN LISTS assets)
+      if(NOT asset MATCHES "/[.]gitkeep$")
+        configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
+      endif()
+    endforeach()
+  endforeach()
   install(DIRECTORY web/editor/data web/editor/icons
     DESTINATION share/avogadro-web
     PATTERN ".gitkeep" EXCLUDE)

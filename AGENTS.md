@@ -72,7 +72,9 @@ in sync with the desktop app.
 
 `CMakeLists.txt` copies the assets into the build's `bin/` directory and
 installs them to `share/avogadro-web`. The full editor and server are staged
-at the root, and the reusable module is staged under `core/`. Put full-editor
+at the root, and the reusable module is staged under `core/`. Thus the import
+`./core/avogadro-editor.js` in `web/editor/editor.js` is relative to the
+staged `editor.js` at the package root. Put full-editor
 data and icons in `web/editor/data/` and `web/editor/icons/`. These directories
 are staged as `data/` and `icons/` at the package root. Add assets required
 for startup to the CI "Stage and verify web package" step.

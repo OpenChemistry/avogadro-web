@@ -52,7 +52,7 @@ export class AvogadroEditor extends EventTarget {
   markSaved() { this.instance.markSaved(); }
 }
 
-export async function createAvogadroEditor(viewport, { onExit, print, printErr } = {}) {
+export async function createAvogadroEditor(viewport, { onExit, print, printErr, wheelZoom = true } = {}) {
   if (!globalThis.WebAssembly) throw new Error('This browser does not support WebAssembly.');
   if (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer) throw new Error('This build needs cross-origin isolation. Serve it with serve-wasm.py or configure COOP: same-origin and COEP: require-corp.');
   const probe = document.createElement('canvas').getContext('webgl2');
@@ -83,11 +83,22 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr }
   resizeObserver = new ResizeObserver(() => instance.qtResizeContainerElement(viewport));
   if (!wheelListener.signal.aborted) resizeObserver.observe(viewport);
 
+  if (!wheelZoom) {
+    // Keep Qt from consuming the wheel, leaving native page scrolling enabled.
+    viewport.addEventListener('wheel', event => event.stopPropagation(),
+      { capture: true, passive: true, signal: wheelListener.signal });
+    return editor;
+  }
+
+  let calculating = editor.state.calculating;
+  editor.addEventListener('statechange', event => { calculating = event.detail.calculating; },
+    { signal: wheelListener.signal });
+
   // Combine wheel events Chrome delivers within a frame before Qt sees them.
   viewport.addEventListener('wheel', event => {
     event.preventDefault();
     event.stopPropagation();
-    if (editor.state.calculating) return;
+    if (calculating) return;
     const unit = event.deltaMode;
     const pixels = event.deltaY * (unit === 1 ? 16 : unit === 2 ? viewport.clientHeight : 1);
     if (!Number.isFinite(pixels) || pixels === 0) return;
@@ -97,7 +108,7 @@ export async function createAvogadroEditor(viewport, { onExit, print, printErr }
       const delta = -wheelPixels / 120;
       wheelPixels = 0;
       wheelFrame = 0;
-      instance.zoom(delta);
+      if (!calculating) instance.zoom(delta);
     });
   }, { capture: true, passive: false, signal: wheelListener.signal });
 
