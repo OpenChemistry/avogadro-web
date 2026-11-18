@@ -48,9 +48,10 @@
         <input
           type="file"
           id="file"
-          accept=".cjson,.mol,.sdf,.xyz,.fchk,.molden,.cube"
+          accept=".cjson,.mol,.sdf,.xyz,.pdb,.fchk,.molden,.cube"
           hidden
         />
+        <button id="lookup" class="quiet" hidden>Look up</button>
         <div class="history">
           <button
             id="undo"
@@ -334,8 +335,32 @@
       <span class="status-indicator"></span
       ><span id="counts">0 atoms · 0 bonds</span
       ><span id="status" role="status" aria-live="polite"></span
+      ><button id="cancel-lookup" class="quiet" hidden>Cancel lookup</button
       ><span class="footer-brand">AVOGADRO WEB</span>
     </footer>
+    <dialog id="lookup-dialog" aria-labelledby="lookup-title">
+      <h2 id="lookup-title">Look up a molecule</h2>
+      <form id="lookup-form">
+        <label>Search by
+          <select id="lookup-kind">
+            <option value="name">Chemical name</option>
+            <option value="cid">PubChem CID</option>
+            <option value="smiles">SMILES</option>
+            <option value="pdb">PDB ID</option>
+            <option value="url">HTTPS file URL</option>
+          </select>
+        </label>
+        <label>Search value
+          <input id="lookup-value" type="text" maxlength="2048" required spellcheck="false" aria-describedby="lookup-privacy" />
+        </label>
+        <p id="lookup-privacy" aria-live="polite"></p>
+        <p id="lookup-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="close-lookup" type="button">Close</button>
+          <button type="submit" class="primary">Fetch molecule</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="discard-dialog" aria-labelledby="discard-title">
       <div class="section-eyebrow">UNSAVED MOLECULE</div>
       <h2 id="discard-title">Keep your work?</h2>
