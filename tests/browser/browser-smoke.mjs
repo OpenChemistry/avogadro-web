@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--widget-update] [--plugins] [--webmcp]
+// Run: node browser-smoke.mjs URL EVIDENCE_DIRECTORY [--single-threaded] [--widget-update] [--plugins] [--webmcp]
 // Owns a new headless Chrome process/profile; never connects to a user's browser.
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, truncate } from 'node:fs/promises';
@@ -387,6 +387,12 @@ try {
     assert.equal((await exportCjson()).atoms.labels[0], 'T');
     await viewportImage('edit-label.png');
     checks.push('Edit Labels saves a custom atom label and enables Labels');
+  }
+  if (offline || process.argv.includes('--single-threaded')) {
+    for (const id of ['calculations', 'optimize', 'render-surface'])
+      assert.equal(await evaluate(`document.getElementById('${id}').hidden`), true, id);
+    assert.equal(await evaluate(`document.getElementById('calculation-unavailable').hidden`), false);
+    checks.push('Single-threaded editor reports calculations unavailable and hides calculation controls');
   }
   if (quantumFixture) {
     await evaluate(`document.querySelector('#calculations').open = true`);

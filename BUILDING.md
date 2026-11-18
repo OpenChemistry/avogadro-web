@@ -48,6 +48,10 @@ node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence
 ```
 
 
+Pass `--single-threaded` to the hosted single-threaded Chrome smoke test to
+verify that the editor hides unavailable calculation controls. The offline test
+checks this automatically.
+
 To include calculation checks in the multithreaded Chrome run, set
 `AVOGADRO_FCHK_FIXTURE` to the absolute path of
 `avogadrodata/data/fchk/h2o-restricted.fchk` in the superbuild checkout.

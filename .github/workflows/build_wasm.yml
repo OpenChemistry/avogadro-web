@@ -248,18 +248,20 @@ jobs:
             offline_dir=$(mktemp -d "$RUNNER_TEMP/offline.XXXXXX")
             cp "$package/avogadro-offline.html" "$offline_dir/"
             node "$tests/browser-smoke.mjs" "file://$offline_dir/avogadro-offline.html" "$RUNNER_TEMP/browser-evidence"
+            smoke_args=(--single-threaded)
             (cd "$package" && exec python3 -m http.server 8000 --bind 127.0.0.1) &
           else
             node "$tests/startup-failures.mjs" "$package"
+            smoke_args=()
+            export AVOGADRO_FCHK_FIXTURE="$GITHUB_WORKSPACE/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk"
+            test -s "$AVOGADRO_FCHK_FIXTURE"
             (cd "$package" && exec python3 serve-wasm.py) &
           fi
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           curl --fail --silent --show-error --retry 10 --retry-connrefused \
             --output /dev/null http://127.0.0.1:8000/
-          export AVOGADRO_FCHK_FIXTURE="$GITHUB_WORKSPACE/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk"
-          test -s "$AVOGADRO_FCHK_FIXTURE"
-          node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence-hosted"
+          node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence-hosted" "${smoke_args[@]}"
 
       - name: Create downloadable ZIP
         working-directory: ${{ runner.temp }}/stage-wasm/share/avogadro-web
