@@ -162,3 +162,43 @@ Run `python3 tests/check-page-security.py` to check the shipped page and its
 JavaScript for forbidden DOM sinks and inline handlers. The Chromium smoke test
 records CSP violations from the first navigation through document editing. Run
 it against both served kits and the standalone single-threaded HTML file.
+
+## Continuous integration
+
+The release workflow builds both kits using `tools/wasm-toolchain.json`.
+The companion avogadrolibs workflow reads the same file from the editor's
+main branch. Enable that job with an upstream superbuild revision that
+contains the published companion pins.
+
+Each WASM job uploads its release ZIP, a separate test-hook build linked
+against the same library installation, and a JSON size report. Release
+assets must fit the kit budgets in `tools/wasm-size-budgets.json`. Update a
+budget alongside an intentional size increase and record both measurements.
+The continuous download and Pages deployment consume only the release ZIPs
+and run from the upstream main branch.
+
+Native CI runs the controller suite with address and undefined-behavior
+sanitizers and checks the web C++ sources with clang-tidy. The
+`WebEditorRoundTrips` test builds small neutral molecules from a fixed seed
+and verifies atom identities and coordinate precision after CJSON, MOL, SDF
+and XYZ round trips. It also checks bond connectivity and order for the
+three formats that store bonds. The default run uses 64
+molecules. Nightly CI uses 2,048, which can be reproduced locally with
+`AVOGADRO_ROUND_TRIP_CASES=2048 ctest --test-dir build-native -R WebEditorRoundTrips --output-on-failure`.
+
+The native Clang build can also enable the libFuzzer driver with
+`-DENABLE_ROUND_TRIP_FUZZER=ON`. The driver uses up to four bytes as a seed
+for the neutral molecule generator and runs the same checks as CTest.
+CI performs 64 runs on PRs and pushes and 2,048 runs nightly. In an
+existing native Clang build with the option enabled, use the command below.
+Qt’s minimal platform avoids the system font database during this test.
+
+```sh
+QT_QPA_PLATFORM=minimal build-native/bin/AvogadroWebRoundTripFuzzer \
+  -runs=64 -max_len=4 -max_total_time=90 -seed=1729 -exact_artifact_path=/dev/null
+```
+
+The browser import corpus checks small standard molecule files and
+failed-import preservation against both release packages. Its nightly run repeats the same bounded
+cases. Repository maintainers can require the lint, native, WASM and
+dependency review checks in branch protection after a successful run.
