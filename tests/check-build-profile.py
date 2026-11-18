@@ -9,6 +9,8 @@ parser.add_argument('build', type=Path)
 parser.add_argument(
     'kit', nargs='?', choices=['wasm_multithread', 'wasm_singlethread'], default='wasm_multithread'
 )
+parser.add_argument('--action-plugins', action='store_true',
+                    help='check a build using the optional action plugin companion revision')
 args = parser.parse_args()
 build = args.build.resolve()
 libs = build / 'avogadrolibs'
@@ -35,6 +37,8 @@ expected_plugins = {
     'Manipulator', 'MeasureTool', 'BallStick', 'Cartoons', 'CrystalScene', 'Label', 'Licorice', 'VanDerWaals',
     'Wireframe',
 }
+if args.action_plugins:
+    expected_plugins.update(['Select', 'Bonding', 'Hydrogens'])
 if threaded:
     expected_plugins.update(['AutoOpt', 'Forcefield', 'SurfaceRender', 'Surfaces', 'Orbitals'])
 assert set(plugins) == expected_plugins, plugins

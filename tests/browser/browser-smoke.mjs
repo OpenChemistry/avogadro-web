@@ -227,6 +227,21 @@ try {
   const files = await readdir(output);
   for (const extension of ['mol', 'sdf', 'xyz']) assert.ok(files.some(name => name.endsWith(`.${extension}`)));
   checks.push('MOL/SDF/XYZ downloads');
+  if (process.argv.includes('--action-plugins')) {
+    const commands = await evaluate(`Array.from(document.querySelector('#molecule-action').options, x => x.value)`);
+    for (const id of ['adjustHydrogens', 'removeAllHydrogens', 'selectAll', 'selectResidue', 'bondSelectedAtoms'])
+      assert.ok(commands.includes(id), id);
+    const threaded = await evaluate(`!document.querySelector('#force-field-label').hidden`);
+    assert.equal(commands.includes('energy'), threaded);
+    assert.equal(commands.includes('forces'), threaded);
+    await set('molecule-action', 'selectAll'); await click('run-action');
+    await wait(`!document.querySelector('#molecule-action option[value="bondSelectedAtoms"]').disabled`, 5000);
+    await set('molecule-action', 'removeAllHydrogens'); await click('run-action');
+    await wait(`!document.querySelector('#counts').textContent.startsWith('2 atoms')`, 5000);
+    await click('undo');
+    await wait(`document.querySelector('#counts').textContent.startsWith('2 atoms')`, 5000);
+    checks.push('Runtime action discovery, selection, hydrogen removal, undo and kit restrictions');
+  }
   if (testPlugins) {
     const tool = async id => {
       const selector = JSON.stringify(`[data-tool="${id}"]`);

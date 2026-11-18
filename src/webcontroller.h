@@ -33,10 +33,12 @@ public:
   bool setDisplayStyle(const QString& id, bool enabled);
   bool alignPickedAtoms(const QString& axis);
   bool setPickedLabel(const QString& label);
+  QJsonObject runAction(const QString& id, const QJsonObject& options);
   bool calculate(const QString& command, const QVariantMap& options);
   bool setDrawOptions(const QVariantMap& options);
   void newMolecule();
   QJsonObject loadMolecule(const QString& text, const QString& format);
+  QJsonObject insertFragment(const QString& sdf);
   QJsonObject exportMolecule(const QString& format) const;
   void markSaved();
   void deleteSelection();
@@ -53,6 +55,10 @@ signals:
 private:
   bool eventFilter(QObject* watched, QEvent* event) override;
   void enableDisplayStyles(const QStringList& names);
+  QJsonObject properties(const QString& id, const QJsonValue& index) const;
+  QJsonObject changeCell(const QString& id, const QJsonArray& values);
+  void addActionPlugin(const QString& id);
+  bool actionEnabled(const QString& id) const;
   void addCalculator(const QString& id);
   void finishCalculation(const QString& message, bool error);
   void replaceMolecule(std::unique_ptr<QtGui::Molecule> molecule);
@@ -61,6 +67,9 @@ private:
   std::unique_ptr<QtGui::LayerModel> m_layers;
   QMap<QString, QtGui::ToolPlugin*> m_tools;
   QMap<QString, QtGui::ExtensionPlugin*> m_calculators;
+  QMap<QString, QtGui::ExtensionPlugin*> m_actionPlugins;
+  QMap<QString, QString> m_actionLabels;
+  QMap<QString, QString> m_actionOwners;
   QTimer m_calculationTimeout;
   QString m_activeCalculator;
   bool m_calculating = false;

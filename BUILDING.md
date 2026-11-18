@@ -309,3 +309,8 @@ The browser import corpus checks small standard molecule files and
 failed-import preservation against both release packages. Its nightly run repeats the same bounded
 cases. Repository maintainers can require the lint, native, WASM and
 dependency review checks in branch protection after a successful run.
+
+The library revision pinned in CI includes the headless action plugins from
+[avogadrolibs PR #3377](https://github.com/OpenChemistry/avogadrolibs/pull/3377).
+For matching local builds, use `--action-plugins` with both
+`tests/check-build-profile.py` and `tests/browser/browser-smoke.mjs`.

@@ -4,7 +4,7 @@ const maxQueryLength = 2048;
 const pubchem = 'https://pubchem.ncbi.nlm.nih.gov';
 const rcsb = 'https://files.rcsb.org';
 const formats = new Set(['cjson', 'mol', 'sdf', 'xyz', 'pdb', 'fchk', 'molden', 'cube']);
-const pubchemKinds = new Set(['name', 'cid', 'smiles']);
+const pubchemKinds = new Set(['name', 'cid', 'smiles', 'inchi']);
 
 export const supportsRemoteImport = location => location.protocol === 'https:';
 export const fileFormat = name => /\.([^.]+)$/.exec(name)?.[1].toLowerCase() ?? '';
@@ -44,9 +44,11 @@ export function prepareImport({ kind, value, format }, page, extraOrigins = []) 
   if (!pubchemKinds.has(kind)) throw new Error('Choose a supported lookup method.');
   if (kind === 'cid' && !/^[1-9][0-9]{0,11}$/.test(value)) throw new Error('Enter a positive PubChem CID.');
   if (kind === 'name' && ['.', '..'].includes(value)) throw new Error('Enter a chemical name.');
-  const input = kind === 'smiles' ? '' : `/${encodeURIComponent(value)}`;
+  if (kind === 'inchi' && !/^InChI=1S?\/.+/.test(value)) throw new Error('Enter a complete InChI identifier.');
+  const useBody = kind === 'smiles' || kind === 'inchi';
+  const input = useBody ? '' : `/${encodeURIComponent(value)}`;
   const url = new URL(`/rest/pug/compound/${kind}${input}/SDF?record_type=3d`, pubchem);
-  const body = kind === 'smiles' ? new URLSearchParams({ smiles: value }) : undefined;
+  const body = useBody ? new URLSearchParams({ [kind]: value }) : undefined;
   return { url, body, filename: 'PubChem structure.sdf', format: 'sdf', source: { kind, value } };
 }
 

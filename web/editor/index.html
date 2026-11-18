@@ -248,6 +248,15 @@
                 /></label>
                 <button type="submit">Apply label</button>
               </form>
+              <fieldset id="molecule-actions" hidden>
+                <legend>Molecule actions</legend>
+                <label>Action<select id="molecule-action"></select></label>
+                <label id="action-argument-label" hidden><span id="action-argument-name"></span>
+                  <input id="action-argument" type="text" maxlength="256" />
+                </label>
+                <button type="button" id="run-action">Run action</button>
+                <output id="action-result" aria-live="polite"></output>
+              </fieldset>
               <section id="auto-opt-options" aria-label="AutoOptimize" hidden>
                 <label
                   >Force field<select id="auto-opt-method">
@@ -347,12 +356,16 @@
             <option value="name">Chemical name</option>
             <option value="cid">PubChem CID</option>
             <option value="smiles">SMILES</option>
+            <option value="inchi">InChI</option>
             <option value="pdb">PDB ID</option>
             <option value="url">HTTPS file URL</option>
           </select>
         </label>
         <label>Search value
           <input id="lookup-value" type="text" maxlength="2048" required spellcheck="false" aria-describedby="lookup-privacy" />
+        </label>
+        <label id="insert-fragment-label" class="check" hidden>
+          <input id="insert-fragment" type="checkbox" />Insert into the current molecule
         </label>
         <p id="lookup-privacy" aria-live="polite"></p>
         <p id="lookup-error" role="alert" hidden></p>

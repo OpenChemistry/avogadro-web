@@ -57,6 +57,15 @@ bool setPickedLabel(std::string label)
 {
   return controller->setPickedLabel(QString::fromStdString(label));
 }
+std::string runAction(std::string command, std::string options)
+{
+  const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
+  if (!doc.isObject())
+    return json({ { "ok", false },
+                  { "error", QObject::tr("Expected action options.") } });
+  return json(
+    controller->runAction(QString::fromStdString(command), doc.object()));
+}
 bool calculate(std::string command, std::string options)
 {
   const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
@@ -74,6 +83,10 @@ std::string load(std::string text, std::string format)
 {
   return json(controller->loadMolecule(QString::fromStdString(text),
                                        QString::fromStdString(format)));
+}
+std::string insertFragment(std::string sdf)
+{
+  return json(controller->insertFragment(QString::fromStdString(sdf)));
 }
 std::string save(std::string format)
 {
@@ -131,8 +144,10 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("setDisplayStyle", &setDisplayStyle);
   emscripten::function("alignPickedAtoms", &alignPickedAtoms);
   emscripten::function("setPickedLabel", &setPickedLabel);
+  emscripten::function("runAction", &runAction);
   emscripten::function("calculate", &calculate);
   emscripten::function("setDrawOptions", &setDrawOptions);
+  emscripten::function("insertFragment", &insertFragment);
   emscripten::function("loadMolecule", &load);
   emscripten::function("exportMolecule", &save);
   emscripten::function("newMolecule", &newMolecule);

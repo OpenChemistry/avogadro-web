@@ -18,7 +18,7 @@ concurrency:
 env:
   SUPERBUILD_REVISION: b563eb581623e0c3b16fe72ba33033a0441ba4d2
   # Published library revision matching this editor's plugin profile.
-  AVOGADROLIBS_REVISION: 61ce6da07f2a125fae2a26180f9c8addad381672
+  AVOGADROLIBS_REVISION: c2ba2eb7dfa6abc67b1d19caeaf0d290db414896
   # ExternalProject's nested builds must use the same limit as the superbuild.
   CMAKE_BUILD_PARALLEL_LEVEL: '2'
 
@@ -196,7 +196,7 @@ jobs:
           cmake --build build-wasm --parallel 2
 
       - name: Check build profile
-        run: python3 openchemistry/avogadro-web/tests/check-build-profile.py build-wasm "$QT_WASM_KIT"
+        run: python3 openchemistry/avogadro-web/tests/check-build-profile.py build-wasm "$QT_WASM_KIT" --action-plugins
 
       - name: Stage and verify web package
         run: |
@@ -294,7 +294,7 @@ jobs:
             --output /dev/null http://127.0.0.1:8000/
           export AVOGADRO_FCHK_FIXTURE="$GITHUB_WORKSPACE/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk"
           test -s "$AVOGADRO_FCHK_FIXTURE"
-          node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence-hosted"
+          node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence-hosted" --action-plugins
 
       - name: Create downloadable ZIP
         working-directory: ${{ runner.temp }}/stage-wasm/share/avogadro-web

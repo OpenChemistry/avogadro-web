@@ -15,6 +15,11 @@ test('Resolve curated molecule sources and preserve SMILES metacharacters', () =
   assert.equal(request.url.pathname, '/rest/pug/compound/smiles/SDF');
   assert.equal(request.url.searchParams.get('record_type'), '3d');
   assert.equal(request.body.get('smiles'), smiles);
+  const inchi = resolve('inchi', 'InChI=1S/H2O/h1H2');
+  assert.equal(inchi.url.pathname, '/rest/pug/compound/inchi/SDF');
+  assert.equal(inchi.url.searchParams.get('record_type'), '3d');
+  assert.equal(inchi.body.get('inchi'), 'InChI=1S/H2O/h1H2');
+  assert.throws(() => resolve('inchi', 'InChIKey:INVALID'), /complete InChI/);
   assert.equal(resolve('pdb', '1crn').url.href, 'https://files.rcsb.org/download/1CRN.pdb');
   assert.throws(() => resolve('cid', '0'), /positive/);
   assert.throws(() => resolve('pdb', '../../1CRN'), /four-character/);

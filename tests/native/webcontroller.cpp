@@ -11,6 +11,7 @@
 #include <avogadro/core/atom.h>
 #include <avogadro/core/bond.h>
 #include <avogadro/core/layermanager.h>
+#include <avogadro/core/stereo.h>
 #include <avogadro/qtgui/molecule.h>
 #include <avogadro/qtgui/rwmolecule.h>
 #include <avogadro/qtopengl/glwidget.h>
@@ -107,6 +108,134 @@ TEST_F(WebEditorTest, PanPreservesDocumentAndMovesFocusAtEachZoom)
   EXPECT_EQ(editor.exportMolecule("cjson"), initialMolecule);
   editor.undo();
   EXPECT_EQ(editor.molecule().atomCount(), 0);
+}
+
+TEST_F(WebEditorTest, DispatchesOnlyEnabledActionsWithValidOptions)
+{
+  const auto run = [this](const QString& id, const QJsonObject& options = {}) {
+    return editor.runAction(id, options).value("ok").toBool();
+  };
+  EXPECT_FALSE(run("center"));
+  ASSERT_TRUE(
+    editor.loadMolecule("1\ncarbon\nC 0 0 0\n", "xyz").value("ok").toBool());
+  EXPECT_TRUE(run("center"));
+  EXPECT_FALSE(run("center", { { "ignored", true } }));
+  EXPECT_FALSE(run("missing"));
+  EXPECT_FALSE(run("wrapUnitCell"));
+  EXPECT_FALSE(run("bondSelectedAtoms"));
+  EXPECT_FALSE(editor.state().value("modified").toBool());
+  if (editor.state().value("canOptimize").toBool()) {
+    ASSERT_TRUE(run("energy"));
+    EXPECT_FALSE(run("center"));
+    EXPECT_FALSE(run("forces"));
+  }
+}
+
+TEST_F(WebEditorTest, Inserts3DFragmentAsOneChemicallyFaithfulEdit)
+{
+  ASSERT_TRUE(
+    editor.loadMolecule("1\nHelium\nHe 3 2 1\n", "xyz")["ok"].toBool());
+  const auto before = editor.exportMolecule("cjson").value("text").toString();
+  const auto sdf = QStringLiteral(
+    "Fragment\n  fixture             3D\n\n"
+    "  2  1  0  0  0  0  0  0  0  0999 V2000\n"
+    "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+    "    1.2000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n"
+    "  1  2  2  3  0  0  0\nM  ISO  1   1  13\nM  CHG  1   1  -1\nM  "
+    "END\n$$$$\n");
+  EXPECT_FALSE(
+    editor.insertFragment(QString(sdf).replace("3D", "2D"))["ok"].toBool());
+  EXPECT_FALSE(editor.insertFragment(sdf + sdf)["ok"].toBool());
+  EXPECT_FALSE(editor.insertFragment("unreadable")["ok"].toBool());
+  EXPECT_FALSE(editor
+                 .insertFragment(QString(sdf).replace(
+                   "M  END", "M  RAD  1   1   2\nM  END"))["ok"]
+                 .toBool());
+  EXPECT_EQ(before, editor.exportMolecule("cjson").value("text").toString());
+  const auto result = editor.insertFragment(sdf);
+  ASSERT_TRUE(result["ok"].toBool())
+    << result["error"].toString().toStdString();
+  auto& mol = editor.molecule();
+  ASSERT_EQ(mol.atomCount(), 3);
+  EXPECT_EQ(mol.atom(0).atomicNumber(), 2);
+  EXPECT_EQ(mol.atom(0).position3d(), Vector3(3, 2, 1));
+  EXPECT_EQ(mol.atom(1).atomicNumber(), 6);
+  EXPECT_EQ(mol.atom(1).isotope(), 13);
+  EXPECT_EQ(mol.atom(1).formalCharge(), -1);
+  EXPECT_EQ(mol.atom(2).atomicNumber(), 8);
+  EXPECT_DOUBLE_EQ(mol.atom(2).position3d().x(), 1.2);
+  ASSERT_EQ(mol.bondCount(), 1);
+  EXPECT_EQ(mol.bond(1, 2).order(), 2);
+  EXPECT_TRUE(Core::bondStereoUnspecified(mol, 0));
+  const auto after = editor.exportMolecule("cjson").value("text").toString();
+  editor.undo();
+  EXPECT_EQ(before, editor.exportMolecule("cjson").value("text").toString());
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+  editor.redo();
+  EXPECT_EQ(after, editor.exportMolecule("cjson").value("text").toString());
+  EXPECT_TRUE(Core::bondStereoUnspecified(mol, 0));
+}
+
+TEST_F(WebEditorTest, ReadsPropertiesAndEditsCrystalWithUndo)
+{
+  ASSERT_TRUE(
+    editor
+      .loadMolecule(
+        R"({"chemicalJson":1,"atoms":{"elements":{"number":[1,1]},"coords":{"3d":[0,0,0,0,0,0.74]}},"bonds":{"connections":{"index":[0,1]},"order":[1]}})",
+        "cjson")
+      .value("ok")
+      .toBool());
+  const auto atom = editor.runAction("atomProperties", { { "index", 1 } });
+  EXPECT_EQ(atom["properties"].toObject()["atomicNumber"], 1);
+  const auto bond = editor.runAction("bondProperties", { { "index", 0 } });
+  ASSERT_TRUE(bond["ok"].toBool());
+  EXPECT_NEAR(bond["properties"].toObject()["lengthAngstrom"].toDouble(), 0.74,
+              1e-6);
+  EXPECT_FALSE(
+    editor.runAction("atomProperties", { { "index", 2 } })["ok"].toBool());
+  EXPECT_FALSE(
+    editor.runAction("bondProperties", { { "index", 0.2 } })["ok"].toBool());
+  EXPECT_FALSE(
+    editor
+      .runAction("editUnitCell", { { "vectors", QJsonArray{ 1, 0, 0, 1, 0, 0, 0,
+                                                            0, 1 } } })["ok"]
+      .toBool());
+  EXPECT_FALSE(editor.molecule().unitCell());
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+  const QJsonArray vectors{ 4, 0, 0, 0, 5, 0, 0, 0, 6 };
+  ASSERT_TRUE(editor.runAction("editUnitCell", { { "vectors", vectors } })["ok"]
+                .toBool());
+  EXPECT_EQ(editor.state()["cellVectors"].toArray(), vectors);
+  EXPECT_FALSE(editor
+                 .runAction("buildSupercell",
+                            { { "repeats", QJsonArray{ 33, 1, 1 } } })["ok"]
+                 .toBool());
+  EXPECT_FALSE(editor
+                 .runAction("buildSupercell",
+                            { { "repeats", QJsonArray{ 1.5, 1, 1 } } })["ok"]
+                 .toBool());
+  ASSERT_TRUE(editor
+                .runAction("buildSupercell",
+                           { { "repeats", QJsonArray{ 2, 1, 1 } } })["ok"]
+                .toBool());
+  EXPECT_EQ(editor.molecule().atomCount(), 4);
+  EXPECT_EQ(editor.state()["cellVectors"].toArray()[0], 8);
+  editor.undo();
+  EXPECT_EQ(editor.molecule().atomCount(), 2);
+  EXPECT_EQ(editor.state()["cellVectors"].toArray(), vectors);
+  editor.undo();
+  EXPECT_FALSE(editor.molecule().unitCell());
+  EXPECT_FALSE(editor.state()["modified"].toBool());
+}
+
+TEST_F(WebEditorTest, CentersAndAlignsCameraWithoutEditingCoordinates)
+{
+  ASSERT_TRUE(
+    editor.loadMolecule("1\nhelium\nHe 0 0 0\n", "xyz").value("ok").toBool());
+  view.renderer().camera().rotate(0.8f, Vector3f::UnitY());
+  ASSERT_TRUE(editor.runAction("center", {})["ok"].toBool());
+  EXPECT_TRUE(view.renderer().camera().modelView().linear().isIdentity(1e-6));
+  EXPECT_FALSE(editor.state()["modified"].toBool());
 }
 
 TEST_F(WebEditorTest, OpenRestoresAvailableStylesOrFallsBackToBallAndStick)

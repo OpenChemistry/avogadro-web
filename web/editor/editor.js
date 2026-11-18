@@ -252,7 +252,52 @@ function renderCalculations(state) {
   }
 }
 
+function renderActions(actions) {
+  const select = $('molecule-action');
+  $('molecule-actions').hidden = !actions.length;
+  if (!actions.length) return;
+  if (select.options.length !== actions.length || actions.some((item, i) => select.options[i].value !== item.id)) {
+    const current = select.value;
+    select.replaceChildren(...actions.map(item => new Option(item.label, item.id)));
+    if (actions.some(item => item.id === current)) select.value = current;
+  }
+  for (const [i, item] of actions.entries()) select.options[i].disabled = !item.enabled;
+  const item = actions.find(item => item.id === select.value);
+  $('run-action').disabled = !item?.enabled;
+  $('action-argument-label').hidden = !item?.argument;
+  const labels = { element: 'Element symbol or number', residue: 'Residue name',
+    index: 'Zero-based index', vectors: 'Lattice vectors a, b, c (nine components in Å)',
+    repeats: 'Copies along a, b, c (three whole numbers)' };
+  $('action-argument-name').textContent = labels[item?.argument] || '';
+}
+$('molecule-action').onchange = () => {
+  const state = editor.state;
+  const { argument } = state.actions.find(item => item.id === $('molecule-action').value) || {};
+  const defaults = { index: '0', vectors: (state.cellVectors?.length ? state.cellVectors : [3,0,0,0,3,0,0,0,3]).join(' '), repeats: '2 1 1' };
+  $('action-argument').value = defaults[argument] || '';
+  $('action-result').textContent = '';
+  renderActions(state.actions);
+};
+$('run-action').onclick = () => action(() => {
+  const item = editor.state.actions.find(item => item.id === $('molecule-action').value);
+  if (!item?.enabled) return;
+  const text = $('action-argument').value.trim();
+  let value = text;
+  if (item.argument === 'index') value = text ? Number(text) : null;
+  if (item.argument === 'repeats' || item.argument === 'vectors')
+    value = text.split(/[\s,]+/).map(Number);
+  const result = editor.runAction(item.id, item.argument ? { [item.argument]: value } : {});
+  if (result.properties) {
+    const labels = { index: 'Index', atomicNumber: 'Atomic number', formalCharge: 'Formal charge',
+      positionAngstrom: 'Position (Å)', begin: 'First atom', end: 'Second atom', order: 'Bond order', lengthAngstrom: 'Length (Å)' };
+    $('action-result').textContent = Object.entries(result.properties).map(([key, value]) =>
+      `${labels[key] || key}: ${Array.isArray(value) ? value.join(', ') : value}`).join(' · ');
+  }
+  if (item.calculation) activateTab($('tab-calculations'));
+}, false);
+
 function render(state) {
+  renderActions(state.actions);
   $('document-name').textContent = `${filename}${state.modified ? ' *' : ''}`;
   $('document-state').textContent = state.modified ? 'Unsaved changes' : state.atomCount ? 'Molecule ready' : 'New molecule';
   $('document-state').classList.toggle('modified', state.modified);
@@ -337,7 +382,7 @@ function cancelLookup() {
   message('Lookup cancelled.');
 }
 
-async function importRemote(request) {
+async function importRemote(request, insert = false) {
   cancelLookup();
   const controller = new AbortController();
   const { signal } = controller;
@@ -349,12 +394,17 @@ async function importRemote(request) {
     if (signal.aborted || !runtimeReady) return;
     let installed = false;
     await action(async () => {
-      if (!(await confirmReplacement())) {
+      if (!insert && !(await confirmReplacement())) {
         message('Lookup cancelled.');
         return;
       }
       if (signal.aborted || !runtimeReady) return;
-      installMolecule(molecule);
+      if (insert) {
+        editor.insertFragment(molecule.text);
+        message('Fragment inserted.');
+      } else {
+        installMolecule(molecule);
+      }
       installed = true;
     });
     return installed;
@@ -372,11 +422,16 @@ $('lookup').hidden = !supportsRemoteImport(location);
 $('lookup').onclick = () => {
   if (busy) return;
   cancelLookup();
+  $('lookup-kind').onchange();
   $('lookup-dialog').showModal();
   $('lookup-value').focus();
 };
 $('lookup-kind').onchange = () => {
   $('lookup-error').hidden = true;
+  const canInsert = typeof editor?.instance.insertFragment === 'function' &&
+    ['smiles', 'inchi'].includes($('lookup-kind').value);
+  $('insert-fragment-label').hidden = !canInsert;
+  $('insert-fragment').checked = false;
   $('lookup-privacy').textContent = describeImport($('lookup-kind').value);
 };
 $('lookup-kind').onchange();
@@ -388,7 +443,7 @@ $('lookup-form').onsubmit = event => {
     const request = prepareImport({ kind: $('lookup-kind').value, value: $('lookup-value').value }, location, extraImportOrigins);
     $('lookup-dialog').close();
     $('lookup-error').hidden = true;
-    importRemote(request);
+    importRemote(request, !$('insert-fragment-label').hidden && $('insert-fragment').checked);
   } catch (error) {
     $('lookup-error').hidden = false;
     $('lookup-error').textContent = error.message;
@@ -562,7 +617,10 @@ try {
     print: text => console.info(text), printErr: text => console.error(text),
   });
   setupPlugins(editor.state);
-  editor.addEventListener('statechange', event => render(event.detail));
+  editor.addEventListener('statechange', event => {
+    $('action-result').textContent = '';
+    render(event.detail);
+  });
   $('loading').hidden = true; setReady(true); applyTheme();
   render(editor.state);
   loadStartupLink();

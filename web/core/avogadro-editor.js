@@ -12,7 +12,7 @@ export class AvogadroEditor extends EventTarget {
     // The published CI runtime initially exposed the three core tools only.
     // Keep newer capabilities driven by the runtime, never by demo controls.
     return { tools: [ { id: 'navigate', label: 'Navigate' }, { id: 'draw', label: 'Draw' }, { id: 'select', label: 'Select' } ],
-      displayStyles: [], canOptimize: false, canRenderSurfaces: false,
+      actions: [], displayStyles: [], canOptimize: false, canRenderSurfaces: false,
       calculating: false, autoOptimizing: false, orbitalCount: 0, cubeCount: 0,
       calculationMessage: '', calculationError: false, pickedAtomIndex: -1,
       ...state };
@@ -35,6 +35,10 @@ export class AvogadroEditor extends EventTarget {
   setPickedLabel(label) {
     if (!this.instance.setPickedLabel(label)) throw new Error('Pick an atom to label.');
   }
+  runAction(id, options = {}) {
+    if (typeof this.instance.runAction !== 'function') throw new Error('Actions are unavailable in this build.');
+    return this.check(JSON.parse(this.instance.runAction(id, JSON.stringify(options))));
+  }
   calculate(command, options = {}) {
     if (!this.instance.calculate(command, JSON.stringify(options))) throw new Error('Calculation unavailable.');
   }
@@ -43,6 +47,10 @@ export class AvogadroEditor extends EventTarget {
   }
   newMolecule() { this.instance.newMolecule(); }
   loadMolecule(text, format) { return this.check(JSON.parse(this.instance.loadMolecule(text, format))); }
+  insertFragment(sdf) {
+    if (typeof this.instance.insertFragment !== 'function') throw new Error('Fragment insertion is unavailable.');
+    return this.check(JSON.parse(this.instance.insertFragment(sdf)));
+  }
   exportMolecule(format = 'cjson') { return this.check(JSON.parse(this.instance.exportMolecule(format))).text; }
   check(result) { if (!result.ok) throw new Error(result.error || 'Unable to process this molecule.'); return result; }
   deleteSelection() { this.instance.deleteSelection(); }

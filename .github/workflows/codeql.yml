@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: timvdm/avogadrolibs
-          ref: 61ce6da07f2a125fae2a26180f9c8addad381672
+          ref: c2ba2eb7dfa6abc67b1d19caeaf0d290db414896
           path: dependencies/avogadrolibs
           persist-credentials: false
       - name: Read Qt version

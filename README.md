@@ -73,7 +73,7 @@ molecule has a unit cell and Cartoons when it has residues. Open accepts PDB
 files for proteins and nucleic acids. You can also drop a single local file
 onto the workspace.
 
-In the HTTPS editor, **Look up** sends a chemical name, CID, or SMILES to
+In the HTTPS editor, **Look up** sends a chemical name, CID, SMILES, or InChI to
 PubChem and imports its 3D record when available. A PDB ID is sent to RCSB PDB.
 HTTPS URL import supports the editor origin and the approved origins described
 in [the hosting guide](docs/self-hosting.md). Remote files share the 32 MiB
@@ -201,6 +201,10 @@ The `AvogadroEditor` wrapper provides:
 - `loadMolecule(text, format)`, `exportMolecule(format = 'cjson')`, and
   `newMolecule()` for file content and documents. Export returns text; your
   application chooses how to download or store it.
+- `insertFragment(sdf)` appends one 3D SDF record and selects the inserted
+  atoms. It retains the current filename and groups the insertion into one
+  undo step. The HTTPS editor obtains this record through the approved
+  [PubChem structure lookup](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest-tutorial).
 - `setTool(id)` and `setDisplayStyle(id, enabled)` for editing and rendering.
   Discover available IDs from `state.tools` and `state.displayStyles`.
 - `setDrawOptions(options)` for element (`atomicNumber`), bond order,
@@ -228,3 +232,26 @@ and deployment instructions.
 
 To change the C++ controller or the plugins included in the WASM runtime, see
 [Building and testing](https://github.com/OpenChemistry/avogadro-web/blob/main/BUILDING.md).
+
+### Molecule actions
+
+The Tool inspector lists the actions reported by the current runtime. Embedders
+can read `editor.state.actions` and call `editor.runAction(id, options)` with
+an enabled ID. The property actions accept `{ index: 0 }`,
+`editUnitCell` accepts `{ vectors: [4,0,0, 0,5,0, 0,0,6] }`, and
+`buildSupercell` accepts `{ repeats: [2,1,1] }`. Each entry supplies a label, enabled state, optional
+argument name and a calculation flag. For example, `selectElement` accepts
+`{ element: 'O' }`. The controller validates options and availability again
+when dispatching. Calculations require a user action.
+
+| Menu | Web support |
+| --- | --- |
+| Hydrogens and bonds | Adjust hydrogens, remove extra/all hydrogens, perceive bonds and bond orders, connect selected atoms, remove bonds. These commands use the library plugins and their undo history. |
+| Insert | In the HTTPS editor, choose **Look up**, select **SMILES** or **InChI**, and check **Insert into the current molecule**. The request sends the identifier to PubChem. A matching PubChem 3D conformer is inserted as a disconnected fragment in one undo step. Molecules without a matching 3D record and explicit radical fragments produce an error. The offline package has no identifier resolver. |
+| Select | All, none, invert, element, water and residue name use the Select plugin. |
+| View | Center and align view to axes resets the viewport orientation and fits the molecule. Align picked atoms changes coordinates. |
+| Analysis | The Calculate inspector exposes surfaces, molecular orbitals and geometry optimization where supported. Energy and forces appear as threaded-kit actions. Inspect an atom or bond by zero-based index for element, formal charge, position, bond endpoints, order and length. Positions and lengths use ångströms. |
+| Crystal | Enter the three lattice vectors in ångströms to create or edit a right-handed unit cell while preserving Cartesian coordinates. Wrap, Niggli reduction and supercell construction require a regular cell. Supercells accept 1–32 integer copies along each axis, with limits of 100,000 atoms and 200,000 bonds. |
+
+The hydrogen, bonding and selection commands require the corresponding optional
+library plugins. Builds without them omit their commands from discovery.
