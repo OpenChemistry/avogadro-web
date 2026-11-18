@@ -15,8 +15,6 @@ def data_url(media_type, content):
 def bundle(directory):
     html = (directory / "index.html").read_text(encoding="utf-8")
     core = (directory / "core/avogadro-editor.js").read_bytes()
-    if b"'wasm_singlethread' !== 'wasm_singlethread'" not in core:
-        raise ValueError("The offline page requires a single-threaded build")
 
     core_url = data_url("text/javascript", core)
     editor = (directory / "editor.js").read_bytes()
@@ -27,15 +25,17 @@ def bundle(directory):
     runtime = (directory / "avogadro-web.js").read_bytes()
     # Supply the embedded WASM to Emscripten before Qt starts, avoiding a file URL fetch.
     runtime += b"""
-const createRuntime = createAvogadroWeb;
-createAvogadroWeb = async config => {
-  const payload = document.getElementById('avogadro-wasm');
-  const compressed = Uint8Array.from(atob(payload.textContent), char => char.charCodeAt(0));
-  payload.remove();
-  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
-  const wasmBinary = new Uint8Array(await new Response(stream).arrayBuffer());
-  return createRuntime({ ...config, wasmBinary });
-};
+;(() => {
+  const createRuntime = createAvogadroWeb;
+  createAvogadroWeb = async config => {
+    const payload = document.getElementById('avogadro-wasm');
+    const compressed = Uint8Array.from(atob(payload.textContent), char => char.charCodeAt(0));
+    payload.remove();
+    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+    const wasmBinary = new Uint8Array(await new Response(stream).arrayBuffer());
+    return createRuntime({ ...config, wasmBinary });
+  };
+})();
 """
     wasm = (directory / "avogadro-web.wasm").read_bytes()
     payload = base64.b64encode(gzip.compress(wasm, mtime=0)).decode("ascii")
@@ -63,6 +63,7 @@ createAvogadroWeb = async config => {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path, help="directory containing the built web assets")
+    parser.add_argument("--kit", required=True, choices=["wasm_singlethread"], help="configured Qt WASM kit")
     args = parser.parse_args()
     html = bundle(args.directory)
     (args.directory / "avogadro-offline.html").write_text(html, encoding="utf-8")

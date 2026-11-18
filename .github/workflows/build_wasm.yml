@@ -226,6 +226,12 @@ jobs:
           print(f'Verified web package: {package}')
           PY
 
+      - name: Set up Node for browser tests
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
       - name: Install browser test dependencies
         working-directory: openchemistry/avogadro-web/tests/browser
         run: npm ci --ignore-scripts --no-audit --no-fund

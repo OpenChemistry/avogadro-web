@@ -72,6 +72,7 @@ if(EMSCRIPTEN)
     add_custom_command(
       OUTPUT "${offline_page}"
       COMMAND "${Python3_EXECUTABLE}" "${offline_generator}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+        --kit "${AVOGADRO_WEB_WASM_KIT}"
       DEPENDS avogadro-web "${offline_generator}"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/index.html"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.js"
