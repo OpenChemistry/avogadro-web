@@ -163,6 +163,113 @@ JavaScript for forbidden DOM sinks and inline handlers. The Chromium smoke test
 records CSP violations from the first navigation through document editing. Run
 it against both served kits and the standalone single-threaded HTML file.
 
+## Local Qt 6.12 and Emscripten 5.0.5 trial
+
+The release pins remain Qt 6.11.1 and Emscripten 4.0.7. Qt pairs its 6.12.0
+WASM packages with Emscripten 5.0.5. Use a separate SDK installation, the
+matching Qt 6.12.0 host tools and both WASM kits to repeat the trial.
+[Qt for WebAssembly](https://doc.qt.io/qt-6.12/wasm.html)
+
+The trial used OpenChemistry `b563eb581623e0c3b16fe72ba33033a0441ba4d2`,
+avogadrolibs `61ce6da07f2a125fae2a26180f9c8addad381672`, and avogadro-web
+`fccf68b0cb961acc1aa615dd7b035e7cde4c0143`. Use those revisions in a
+separate checkout to reproduce the measured packages. The commands below
+take the installed SDK and kit paths explicitly. Each kit gets an empty build
+and staging directory.
+
+```bash
+set -eo pipefail
+source_dir=/absolute/path/to/openchemistry
+emsdk_root=/absolute/path/to/emsdk-5.0.5
+qt_host=/absolute/path/to/Qt/6.12.0/gcc_64
+qt_single=/absolute/path/to/Qt/6.12.0/wasm_singlethread
+qt_multi=/absolute/path/to/Qt/6.12.0/wasm_multithread
+trial_root=$(mktemp -d "${TMPDIR:-/tmp}/avogadro-qt612.XXXXXX")
+
+"$emsdk_root/emsdk" install 5.0.5
+"$emsdk_root/emsdk" activate 5.0.5
+source "$emsdk_root/emsdk_env.sh"
+em++ --version
+"$qt_host/libexec/moc" --version
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+
+for kit in wasm_singlethread wasm_multithread; do
+  qt_wasm=$qt_single
+  if [[ $kit == wasm_multithread ]]; then qt_wasm=$qt_multi; fi
+  build="$trial_root/$kit"
+  cmake -S "$source_dir" -B "$build" -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$qt_wasm/lib/cmake/Qt6/qt.toolchain.cmake" \
+    -DCMAKE_BUILD_TYPE=Release -DQT_HOST_PATH="$qt_host" \
+    -DQT_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
+    -DAVOGADRO_WEB_EDITOR=ON -DBUILD_AVOGADRO=ON -DUSE_OPENGL=ON \
+    -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_PLUGINS=ON -DENABLE_SUBPROCESS=OFF \
+    -DUSE_PYTHON=OFF -DUSE_LIBARCHIVE=OFF -DUSE_PLOTTER=OFF -DBUILD_MOLEQUEUE=OFF \
+    -DAvogadro_ENABLE_RPC=OFF -DENABLE_TESTING=OFF
+  cmake --build "$build" --parallel 2
+  python3 "$source_dir/avogadro-web/tests/check-build-profile.py" "$build" "$kit"
+  cmake --install "$build/avogadro-web" --prefix "$build/stage"
+done
+```
+
+Install the browser test dependencies with `npm ci --ignore-scripts --no-audit
+--no-fund` in `"$source_dir/avogadro-web/tests/browser"`. Use the loopback
+server commands in [Build](#build) from the corresponding package directory.
+Run the test commands below in a second terminal with the same `source_dir`
+and `trial_root` values. Stop the single-threaded server before starting the
+isolated multithreaded server on port 8000.
+
+```bash
+tests="$source_dir/avogadro-web/tests/browser"
+single="$trial_root/wasm_singlethread/stage/share/avogadro-web"
+multi="$trial_root/wasm_multithread/stage/share/avogadro-web"
+node "$tests/startup-failures.mjs" "$single" --single-threaded
+node "$tests/startup-failures.mjs" "$multi"
+
+# With the single-threaded package served by python3 -m http.server.
+node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$trial_root/single-hosted"
+mkdir "$trial_root/offline"
+cp "$single/avogadro-offline.html" "$trial_root/offline/"
+node "$tests/browser-smoke.mjs" "file://$trial_root/offline/avogadro-offline.html" "$trial_root/single-offline"
+
+# With the multithreaded package served by its serve-wasm.py.
+export AVOGADRO_FCHK_FIXTURE="$source_dir/avogadrodata/data/fchk/h2o-restricted.fchk"
+for run in 1 2; do
+  node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$trial_root/multi-hosted-$run"
+done
+```
+
+Both release builds passed the build-profile check. Chromium passed
+single-threaded startup in a cross-origin iframe without isolation, hosted
+smoke (11 checks), and direct file startup and editing (12 checks).
+The isolated threaded build passed 15 smoke checks in each of two browser
+runs, including UFF optimization, surfaces, orbitals, and imported grids.
+The checks did not measure startup time or reproduce the reported threaded
+hang. The trial predates the editor CSP and its stylesheet hash checks.
+[Threaded hang report](https://github.com/OpenChemistry/avogadro-web/issues/17)
+
+The default-column values are from the PR #21 CI artifacts
+(Qt 6.11.1/Emscripten 4.0.7, editor `ecae4c178ff00c7c5344b5341a01898387b89c7d`).
+The candidate was built locally with Qt 6.12.0/Emscripten 5.0.5. The artifact
+comparison includes differences in the editor revision and build environment.
+[PR #21](https://github.com/OpenChemistry/avogadro-web/pull/21) · CI run `44391559047`
+
+| Kit | Asset | Default bytes | Candidate bytes | Release budget |
+| --- | --- | ---: | ---: | ---: |
+| Single | WASM | 16,424,523 | 20,461,332 | 18,874,368 |
+| Single | WASM gzip | 5,970,236 | 7,049,098 | 6,815,744 |
+| Single | Offline HTML | 8,385,119 | 9,782,311 | 9,437,184 |
+| Threaded | WASM | 17,553,200 | 21,565,393 | 19,922,944 |
+| Threaded | WASM gzip | 6,435,622 | 7,515,262 | 7,340,032 |
+
+After staging, create each local ZIP with `python3 -m zipfile -c
+"$trial_root/$kit.zip" .` from the package directory. Run
+`python3 tools/check-wasm-size.py KIT STAGED_PACKAGE ZIP` from this checkout against
+the resulting package. The single-threaded local ZIP was 21,430,800 bytes
+(20,971,520 budget) and the threaded ZIP was 15,185,957 bytes (15,728,640
+budget). The checker rejected both kits because of the over-budget assets.
+The release pins remain in place pending a controlled size comparison and a
+test that reproduces the threaded hang on the default toolchain.
+
 ## Continuous integration
 
 The release workflow builds both kits using `tools/wasm-toolchain.json`.
