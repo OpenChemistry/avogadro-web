@@ -57,6 +57,15 @@ bool setPickedLabel(std::string label)
 {
   return controller->setPickedLabel(QString::fromStdString(label));
 }
+std::string runAction(std::string command, std::string options)
+{
+  const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
+  if (!doc.isObject())
+    return json({ { "ok", false },
+                  { "error", QObject::tr("Expected action options.") } });
+  return json(
+    controller->runAction(QString::fromStdString(command), doc.object()));
+}
 bool calculate(std::string command, std::string options)
 {
   const auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(options));
@@ -74,6 +83,10 @@ std::string load(std::string text, std::string format)
 {
   return json(controller->loadMolecule(QString::fromStdString(text),
                                        QString::fromStdString(format)));
+}
+std::string insertFragment(std::string sdf)
+{
+  return json(controller->insertFragment(QString::fromStdString(sdf)));
 }
 std::string save(std::string format)
 {
@@ -103,6 +116,14 @@ void zoom(double delta)
 {
   controller->zoom(delta);
 }
+void pan(double x, double y)
+{
+  controller->pan(x, y);
+}
+void touchPointer(const std::string& phase, double x, double y, int modifiers)
+{
+  controller->touchPointer(QString::fromStdString(phase), x, y, modifiers);
+}
 bool setTheme(const std::string& theme)
 {
   return controller->setTheme(QString::fromStdString(theme));
@@ -123,8 +144,10 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("setDisplayStyle", &setDisplayStyle);
   emscripten::function("alignPickedAtoms", &alignPickedAtoms);
   emscripten::function("setPickedLabel", &setPickedLabel);
+  emscripten::function("runAction", &runAction);
   emscripten::function("calculate", &calculate);
   emscripten::function("setDrawOptions", &setDrawOptions);
+  emscripten::function("insertFragment", &insertFragment);
   emscripten::function("loadMolecule", &load);
   emscripten::function("exportMolecule", &save);
   emscripten::function("newMolecule", &newMolecule);
@@ -134,6 +157,8 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("resetCamera", &resetCamera);
   emscripten::function("setTheme", &setTheme);
   emscripten::function("zoom", &zoom);
+  emscripten::function("pan", &pan);
+  emscripten::function("touchPointer", &touchPointer);
   emscripten::function("markSaved", &markSaved);
 }
 #endif

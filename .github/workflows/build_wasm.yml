@@ -5,6 +5,8 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '32 2 * * *'
 
 permissions:
   contents: read
@@ -14,19 +16,27 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
 env:
-  QT_VERSION: '6.11.1'
-  EMSCRIPTEN_VERSION: '4.0.7'
-  SUPERBUILD_REVISION: dbb1100a931c528b0b887ed6a02c0d4f4395f4c1
+  SUPERBUILD_REVISION: b563eb581623e0c3b16fe72ba33033a0441ba4d2
   # Published library revision matching this editor's plugin profile.
-  AVOGADROLIBS_REVISION: 61ce6da07f2a125fae2a26180f9c8addad381672
+  AVOGADROLIBS_REVISION: c2ba2eb7dfa6abc67b1d19caeaf0d290db414896
   # ExternalProject's nested builds must use the same limit as the superbuild.
   CMAKE_BUILD_PARALLEL_LEVEL: '2'
 
 jobs:
   build:
-    name: WebAssembly Release
+    name: WebAssembly Release (${{ matrix.qt_kit }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - qt_kit: wasm_multithread
+            package: avogadro-web-wasm
+          - qt_kit: wasm_singlethread
+            package: avogadro-web-wasm-singlethread
+    env:
+      QT_WASM_KIT: ${{ matrix.qt_kit }}
+      WASM_PACKAGE: ${{ matrix.package }}
     defaults:
       run:
         shell: bash
@@ -67,10 +77,31 @@ jobs:
           path: openchemistry/avogadro-web
           persist-credentials: false
 
+      - name: Check editor security rules
+        run: python3 openchemistry/avogadro-web/tests/check-page-security.py
+
+      - name: Read pinned Qt and Emscripten versions
+        working-directory: openchemistry/avogadro-web
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          versions = json.loads(Path('tools/wasm-toolchain.json').read_text())
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              for tool in ('qt', 'emscripten'):
+                  version = versions[tool]
+                  if not re.fullmatch(r'[0-9]+[.][0-9]+[.][0-9]+', version):
+                      raise SystemExit(f'Invalid version for {tool}')
+                  print(f'{tool.upper()}_VERSION={version}', file=out)
+          PY
+
       - name: Install build tools
         run: |
           sudo apt-get -qq update
-          sudo apt-get -qq install cmake ninja-build gzip
+          sudo apt-get -qq install cmake ninja-build gzip ccache
 
       # Separate installation roots keep the host and WASM Qt caches distinct.
       - name: Install host Qt
@@ -99,7 +130,7 @@ jobs:
           version: ${{ env.QT_VERSION }}
           host: all_os
           target: wasm
-          arch: wasm_multithread
+          arch: ${{ matrix.qt_kit }}
           dir: ${{ runner.temp }}/qt-wasm
           archives: qtbase
           cache: true
@@ -121,20 +152,33 @@ jobs:
             emsdk/node
           key: wasm-sdk-${{ runner.os }}-${{ runner.arch }}-${{ env.EMSCRIPTEN_VERSION }}
 
+      - name: Cache compiled WASM objects
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/wasm-ccache
+          key: wasm-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.qt_kit }}-${{ env.QT_VERSION }}-${{ env.EMSCRIPTEN_VERSION }}-${{ env.AVOGADROLIBS_REVISION }}-${{ github.sha }}
+          restore-keys: wasm-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.qt_kit }}-${{ env.QT_VERSION }}-${{ env.EMSCRIPTEN_VERSION }}-${{ env.AVOGADROLIBS_REVISION }}-
+
       - name: Activate toolchain
         run: |
           ./emsdk/emsdk install "$EMSCRIPTEN_VERSION"
           ./emsdk/emsdk activate "$EMSCRIPTEN_VERSION"
           {
+            echo "CCACHE_DIR=$RUNNER_TEMP/wasm-ccache"
+            echo 'CCACHE_MAXSIZE=512M'
+            echo 'CMAKE_C_COMPILER_LAUNCHER=ccache'
+            echo 'CMAKE_CXX_COMPILER_LAUNCHER=ccache'
             echo "EM_CACHE=$RUNNER_TEMP/em-cache"
             echo "QT_HOST_PATH=$RUNNER_TEMP/qt-host/Qt/$QT_VERSION/gcc_64"
-            echo "QT_WASM_PATH=$RUNNER_TEMP/qt-wasm/Qt/$QT_VERSION/wasm_multithread"
+            echo "QT_WASM_PATH=$RUNNER_TEMP/qt-wasm/Qt/$QT_VERSION/$QT_WASM_KIT"
           } >> "$GITHUB_ENV"
 
       - name: Configure
         run: |
           source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
-          "$QT_WASM_PATH/bin/qt-cmake" -S openchemistry -B build-wasm -G Ninja \
+          # The WASM Qt archive may ship qt-cmake without executable permissions.
+          cmake -S openchemistry -B build-wasm -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$QT_WASM_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_HOST_PATH="$QT_HOST_PATH" \
             -DQT_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
@@ -152,7 +196,7 @@ jobs:
           cmake --build build-wasm --parallel 2
 
       - name: Check build profile
-        run: python3 openchemistry/avogadro-web/tests/check-build-profile.py build-wasm
+        run: python3 openchemistry/avogadro-web/tests/check-build-profile.py build-wasm "$QT_WASM_KIT" --action-plugins
 
       - name: Stage and verify web package
         run: |
@@ -166,11 +210,13 @@ jobs:
 
           package = Path(os.environ['RUNNER_TEMP']) / 'stage-wasm/share/avogadro-web'
           required = [
-              'index.html', 'editor.css', 'editor.js', 'icons/avogadro2.svg',
+              'index.html', 'editor.css', 'editor.js', 'molecule-import.js', 'share-link.js', 'icons/avogadro2.svg',
               'core/avogadro-editor.js', 'qtloader.js',
               'avogadro-web.js', 'avogadro-web.wasm', 'avogadro-web.wasm.gz',
               'README.md', 'docs/self-hosting.md', 'serve-wasm.py',
           ]
+          if os.environ['QT_WASM_KIT'] == 'wasm_singlethread':
+              required.append('avogadro-offline.html')
           for name in required:
               path = package / name
               if not path.is_file() or path.stat().st_size == 0:
@@ -205,24 +251,101 @@ jobs:
                   'cmake': output('cmake', '--version'),
                   'ninja': output('ninja', '--version'),
               },
-              'profile': 'Release, wasm_multithread',
+              'profile': f"Release, {os.environ['QT_WASM_KIT']}",
               'github_run_id': os.environ['GITHUB_RUN_ID'],
           }
           (package / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           print(f'Verified web package: {package}')
           PY
 
+      - name: Set up Node for browser tests
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install browser test dependencies
+        working-directory: openchemistry/avogadro-web/tests/browser
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test staged package in Chromium
+        run: |
+          package="$RUNNER_TEMP/stage-wasm/share/avogadro-web"
+          tests=openchemistry/avogadro-web/tests/browser
+          if [[ "$QT_WASM_KIT" == wasm_singlethread ]]; then
+            node "$tests/molecule-import.test.mjs"
+            node "$tests/molecule-import-smoke.mjs" "$package"
+            node "$tests/share-link.test.mjs"
+            node "$tests/share-link-smoke.mjs" "$package"
+            node "$tests/mobile-touch-smoke.mjs" "$package"
+            node "$tests/mobile-first-placement.mjs" "$package"
+            node "$tests/startup-failures.mjs" "$package" --single-threaded
+            offline_dir=$(mktemp -d "$RUNNER_TEMP/offline.XXXXXX")
+            cp "$package/avogadro-offline.html" "$offline_dir/"
+            node "$tests/browser-smoke.mjs" "file://$offline_dir/avogadro-offline.html" "$RUNNER_TEMP/browser-evidence"
+            (cd "$package" && exec python3 -m http.server 8000 --bind 127.0.0.1) &
+          else
+            node "$tests/startup-failures.mjs" "$package"
+            (cd "$package" && exec python3 serve-wasm.py) &
+          fi
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 10 --retry-connrefused \
+            --output /dev/null http://127.0.0.1:8000/
+          export AVOGADRO_FCHK_FIXTURE="$GITHUB_WORKSPACE/openchemistry/avogadrodata/data/fchk/h2o-restricted.fchk"
+          test -s "$AVOGADRO_FCHK_FIXTURE"
+          node "$tests/browser-smoke.mjs" http://127.0.0.1:8000/ "$RUNNER_TEMP/browser-evidence-hosted" --action-plugins
+
       - name: Create downloadable ZIP
         working-directory: ${{ runner.temp }}/stage-wasm/share/avogadro-web
-        run: python3 -m zipfile -c "$RUNNER_TEMP/avogadro-web-wasm.zip" .
+        run: python3 -m zipfile -c "$RUNNER_TEMP/$WASM_PACKAGE.zip" .
+
+      - name: Check release size budgets
+        run: |
+          python3 openchemistry/avogadro-web/tools/check-wasm-size.py \
+            "$QT_WASM_KIT" "$RUNNER_TEMP/stage-wasm/share/avogadro-web" \
+            "$RUNNER_TEMP/$WASM_PACKAGE.zip"
 
       - name: Upload web package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: avogadro-web-wasm
-          path: ${{ runner.temp }}/avogadro-web-wasm.zip
+          name: ${{ matrix.package }}
+          path: ${{ runner.temp }}/${{ matrix.package }}.zip
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload release size report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sizes-${{ matrix.package }}
+          path: ${{ runner.temp }}/${{ matrix.package }}.sizes.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build browser test hooks against the installed libraries
+        run: |
+          source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
+          prefix="$GITHUB_WORKSPACE/build-wasm/prefix"
+          cmake -S openchemistry/avogadro-web -B build-hooks -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$QT_WASM_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release -DQT_HOST_PATH="$QT_HOST_PATH" \
+            -DQT_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
+            -DCMAKE_PREFIX_PATH="$prefix" -DCMAKE_FIND_ROOT_PATH="$prefix" \
+            -DENABLE_TESTING=ON
+          cmake --build build-hooks --parallel 2
+          cmake --install build-hooks --prefix "$RUNNER_TEMP/stage-hooks"
+
+      - name: Upload browser test hooks
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-hooks-${{ matrix.package }}
+          path: ${{ runner.temp }}/stage-hooks/share/avogadro-web
+          if-no-files-found: error
+          retention-days: 7
+
+  import-corpus:
+    needs: build
+    uses: ./.github/workflows/fuzz.yml # zizmor: ignore[self-repository] (actionlint 1.7.12 requires the relative form)
 
   publish:
     name: Update continuous download
@@ -236,10 +359,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download verified ZIP
+      - name: Download verified ZIPs
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: avogadro-web-wasm
+          pattern: avogadro-web-wasm*
+          merge-multiple: true
           path: package
 
       - name: Publish continuous prerelease
@@ -260,17 +384,23 @@ jobs:
 
           Build: $BUILD_URL
 
-          Extract avogadro-web-wasm.zip and run python3 serve-wasm.py.
-          This is a development build. The ZIP contains build-manifest.json
+          - avogadro-web-wasm.zip includes worker-based calculations. Run python3 serve-wasm.py after extracting it.
+          - avogadro-web-wasm-singlethread.zip supports embedding without cross-origin isolation. Extract it and double-click avogadro-offline.html to run it locally.
+
+          These are development builds. Each ZIP contains build-manifest.json
           with the exact source revisions and toolchain versions.
           The continuous tag marks the initial release; consult the manifest
           for the source revision of the current download.
           EOF
+          packages=(package/avogadro-web-wasm.zip package/avogadro-web-wasm-singlethread.zip)
+          for archive in "${packages[@]}"; do
+            test -s "$archive"
+          done
           if gh release view continuous > /dev/null 2>&1; then
-            gh release upload continuous package/avogadro-web-wasm.zip --clobber
+            gh release upload continuous "${packages[@]}" --clobber
             gh release edit continuous --prerelease --latest=false --notes-file notes.md
           else
-            gh release create continuous package/avogadro-web-wasm.zip \
+            gh release create continuous "${packages[@]}" \
               --target "$BUILD_SHA" --title 'Continuous WASM build' \
               --prerelease --latest=false --notes-file notes.md
           fi

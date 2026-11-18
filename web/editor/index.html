@@ -2,18 +2,38 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'sha256-a3FoaG2nlZDqEWiJmYcW36Yk4UZ0Edqiv/7gZqhn1T4='; img-src 'self' data: blob:; connect-src 'self' https://pubchem.ncbi.nlm.nih.gov https://files.rcsb.org; worker-src 'self' blob:; base-uri 'none'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#151a21" />
     <title>Avogadro · Molecule editor</title>
-    <script>
-      try {
-        document.documentElement.dataset.theme =
-          localStorage.getItem("avogadro-theme") === "light" ? "light" : "dark";
-      } catch {}
-    </script>
     <link rel="stylesheet" href="editor.css" />
   </head>
   <body>
+    <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" class="icon-definitions">
+      <defs>
+        <g id="icon-new"><path d="M12 5v14M5 12h14"/></g>
+        <g id="icon-open"><path d="M3 7V5h7l2 3h9v12H3V7Zm0 3h18"/></g>
+        <g id="icon-undo"><path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 6 6v3"/></g>
+        <g id="icon-redo"><path d="m16 5 5 5-5 5m5-5H10a6 6 0 0 0-6 6v3"/></g>
+        <g id="icon-download"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></g>
+        <g id="icon-delete"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></g>
+        <g id="icon-fit"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></g>
+        <g id="icon-panel"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></g>
+        <g id="icon-close"><path d="m6 6 12 12M6 18 18 6"/></g>
+        <g id="icon-shield"><path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></g>
+        <g id="icon-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></g>
+        <g id="icon-moon"><path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/></g>
+        <g id="icon-navigate"><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-35 12 12)"/><circle cx="12" cy="12" r="7"/></g>
+        <g id="icon-draw"><path d="m4 16-1 5 5-1L21 7l-4-4L4 16Zm10-10 4 4M4 16l4 4"/></g>
+        <g id="icon-select"><path d="m5 3 14 10-7 1-3 7L5 3Z"/></g>
+        <g id="icon-MeasureTool"><path d="m3 16 13-13 5 5L8 21l-5-5Zm4-4 3 3m1-7 3 3m1-7 3 3"/></g>
+        <g id="icon-Manipulator"><path d="M12 2v20M2 12h20m-13-7 3-3 3 3m-6 14 3 3 3-3M5 9l-3 3 3 3m14-6 3 3-3 3"/></g>
+        <g id="icon-AlignTool"><path d="M4 3v18m0-9h17M8 6h9M8 18h5m4-9 4 3-4 3"/></g>
+        <g id="icon-BondCentric"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="7" r="3"/><path d="m8 15 8-6M4 7a8 8 0 0 1 9-4m-2-2 2 2-2 2m9 12a8 8 0 0 1-9 4"/></g>
+        <g id="icon-LabelEditor"><path d="M4 5h16M12 5v15M8 20h8"/></g>
+        <g id="icon-AutoOpt"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></g>
+      </defs>
+    </svg>
     <header class="document-bar">
       <a class="brand" href="./" aria-label="Avogadro home"
         ><img src="icons/avogadro2.svg" alt="" width="32" height="32" /><span>Avogadro<small>MOLECULE EDITOR</small></span></a
@@ -28,9 +48,10 @@
         <input
           type="file"
           id="file"
-          accept=".cjson,.mol,.sdf,.xyz,.fchk,.molden,.cube"
+          accept=".cjson,.mol,.sdf,.xyz,.pdb,.fchk,.molden,.cube"
           hidden
         />
+        <button id="lookup" class="quiet" hidden>Look up</button>
         <div class="history">
           <button
             id="undo"
@@ -83,6 +104,7 @@
           </section>
         </div>
       </fieldset>
+      <button id="copy-link" class="quiet" hidden disabled>Copy link</button>
       <button
         id="theme"
         class="icon-button"
@@ -226,6 +248,15 @@
                 /></label>
                 <button type="submit">Apply label</button>
               </form>
+              <fieldset id="molecule-actions" hidden>
+                <legend>Molecule actions</legend>
+                <label>Action<select id="molecule-action"></select></label>
+                <label id="action-argument-label" hidden><span id="action-argument-name"></span>
+                  <input id="action-argument" type="text" maxlength="256" />
+                </label>
+                <button type="button" id="run-action">Run action</button>
+                <output id="action-result" aria-live="polite"></output>
+              </fieldset>
               <section id="auto-opt-options" aria-label="AutoOptimize" hidden>
                 <label
                   >Force field<select id="auto-opt-method">
@@ -314,8 +345,50 @@
       <span class="status-indicator"></span
       ><span id="counts">0 atoms · 0 bonds</span
       ><span id="status" role="status" aria-live="polite"></span
+      ><button id="cancel-lookup" class="quiet" hidden>Cancel lookup</button
       ><span class="footer-brand">AVOGADRO WEB</span>
     </footer>
+    <dialog id="lookup-dialog" aria-labelledby="lookup-title">
+      <h2 id="lookup-title">Look up a molecule</h2>
+      <form id="lookup-form">
+        <label>Search by
+          <select id="lookup-kind">
+            <option value="name">Chemical name</option>
+            <option value="cid">PubChem CID</option>
+            <option value="smiles">SMILES</option>
+            <option value="inchi">InChI</option>
+            <option value="pdb">PDB ID</option>
+            <option value="url">HTTPS file URL</option>
+          </select>
+        </label>
+        <label>Search value
+          <input id="lookup-value" type="text" maxlength="2048" required spellcheck="false" aria-describedby="lookup-privacy" />
+        </label>
+        <label id="insert-fragment-label" class="check" hidden>
+          <input id="insert-fragment" type="checkbox" />Insert into the current molecule
+        </label>
+        <p id="lookup-privacy" aria-live="polite"></p>
+        <p id="lookup-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="close-lookup" type="button">Close</button>
+          <button type="submit" class="primary">Fetch molecule</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="link-lookup-dialog" aria-labelledby="link-lookup-title">
+      <h2 id="link-lookup-title">Fetch the molecule in this link?</h2>
+      <p id="link-lookup-privacy"></p>
+      <form method="dialog">
+        <button value="cancel" autofocus>Cancel</button>
+        <button value="fetch" class="primary">Fetch molecule</button>
+      </form>
+    </dialog>
+    <dialog id="copy-link-dialog" aria-labelledby="copy-link-title">
+      <h2 id="copy-link-title">Share molecule link</h2>
+      <p>Copy the selected link.</p>
+      <label>Molecule link <input id="share-link-value" type="text" readonly autofocus /></label>
+      <form method="dialog"><button>Close</button></form>
+    </dialog>
     <dialog id="discard-dialog" aria-labelledby="discard-title">
       <div class="section-eyebrow">UNSAVED MOLECULE</div>
       <h2 id="discard-title">Keep your work?</h2>

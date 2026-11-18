@@ -44,6 +44,7 @@ CMakeLists.txt.user*
 qtloader.js
 /avogadro-web.js
 /avogadro-web.html
+/avogadro-offline.html
 
 # Browser test evidence (default output dirs of tests/*.mjs)
 /evidence/

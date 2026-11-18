@@ -2,7 +2,7 @@
 
 Draw, edit, and visualize molecules in a desktop browser with Avogadro's
 WebAssembly (WASM) build. Open molecular files, optimize geometry, and display
-molecular surfaces and orbitals. Files are processed in your browser.
+molecular surfaces and orbitals. Files are processed in your browser. The editor accepts files up to 32 MiB.
 
 Use the included editor, or build your own interface around the same molecular
 rendering and editing runtime.
@@ -27,24 +27,26 @@ color switching. Theme changes never enter molecular undo history.
 
 ## Get started
 
-1. [Download the WASM package](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip).
-   This is a development build. See the [download page](https://github.com/OpenChemistry/avogadro-web/releases/tag/continuous)
+1. Choose a development build.
+   - [Multithreaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip)
+     includes geometry optimization, Auto Optimize, and surface and orbital calculations.
+   - [Single-threaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm-singlethread.zip)
+     opens directly from disk and supports viewing and editing in cross-origin iframes.
+     The worker-based calculations listed above are unavailable in this build.
+
+   See the [download page](https://github.com/OpenChemistry/avogadro-web/releases/tag/continuous)
    for availability and version details.
-2. Extract the ZIP. Keep all files together and open a terminal in the directory
-   containing `index.html` and `serve-wasm.py`.
-3. Start the bundled server with Python 3:
+2. Extract the ZIP.
+   - **Single-threaded**. Double-click `avogadro-offline.html`. You can move
+     this file on its own and open it without a server or internet connection.
+   - **Multithreaded**. Open a terminal in the extracted folder, run
+     `python3 serve-wasm.py`, and open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+     Press Ctrl+C in the terminal to stop the server.
 
-   ```sh
-   python3 serve-wasm.py
-   ```
-
-4. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in a desktop browser.
-   Press Ctrl+C in the terminal to stop the server.
-
-You need Python 3 and a browser with WebAssembly, WebGL 2, and SharedArrayBuffer
-support. Enable hardware acceleration if WebGL 2 is unavailable. Open the editor
-through the server; double-clicking `index.html` will not work. The bundled
-server listens only on your computer and supplies the headers the runtime needs.
+Both builds need a browser with WebAssembly and WebGL 2. The multithreaded
+build also needs SharedArrayBuffer, which the bundled server enables on
+loopback by sending cross-origin isolation headers. Enable hardware
+acceleration if WebGL 2 is unavailable.
 
 ## Using the editor
 
@@ -53,6 +55,11 @@ order and hydrogen adjustment enabled. Draw by clicking or dragging; right-click
 an atom or bond to remove it. Select by clicking or dragging a rectangle. Navigate
 by dragging to rotate, right-dragging to pan, and scrolling to zoom. Ctrl/Cmd+Z,
 Ctrl/Cmd+Shift+Z, Ctrl+Y, Delete and Backspace apply only in the viewport.
+
+On phones, the tool strip scrolls horizontally and the inspector opens above it.
+Tap or drag with one finger to use the active tool. Drag with two fingers to
+pan, or spread and pinch to zoom. Both motions work together in any tool.
+A touch that starts on the controls scrolls them normally.
 
 The WASM build also includes Measure, Manipulate, Align, Bond-Centric
 Manipulation, and Edit Labels. Click atoms in the viewport to measure or align
@@ -63,7 +70,16 @@ Licorice, Van der Waals, and Labels on the active layer. CJSON saves the enabled
 styles per layer. If a file has no enabled style available in the web build,
 the editor enables Ball and Stick. It also enables Crystal Lattice when the
 molecule has a unit cell and Cartoons when it has residues. Open accepts PDB
-files for proteins and nucleic acids.
+files for proteins and nucleic acids. You can also drop a single local file
+onto the workspace.
+
+In the HTTPS editor, **Look up** sends a chemical name, CID, SMILES, or InChI to
+PubChem and imports its 3D record when available. A PDB ID is sent to RCSB PDB.
+HTTPS URL import supports the editor origin and the approved origins described
+in [the hosting guide](docs/self-hosting.md). Remote files share the 32 MiB
+limit and replacing an unsaved molecule requires confirmation. You can cancel
+a lookup while the download is pending. The standalone file has local import
+and drag-and-drop.
 
 With the multithreaded Qt WASM build, **Calculations** offers Optimize
 Geometry with UFF or Lennard-Jones, three molecular surfaces, and orbital
@@ -85,13 +101,33 @@ In browsers with WebMCP enabled, Avogadro registers the read-only
 atom indices, counts, and the unsaved status of the live molecule. Inspection
 runs in the tab and leaves the editor's undo stack and unsaved status intact.
 
+## Open and share molecule links
+
+Add one source to the editor URL using `pdb`, `cid`, `name`, `smiles`, or
+`url`. For example, `?pdb=1CRN&style=cartoon&mode=view` opens an RCSB entry
+after you approve the lookup. For HTTPS files, add `type=sdf` (or another
+supported extension) when the path does not identify the file format.
+Use percent-encoding for special characters in parameter values.
+
+Links can set an available display `style` or `tool`, a `theme` of
+`light` or `dark`, and a `mode` of `edit` or `view`. View mode hides
+editing controls and supports Navigate and Measure. `stick`, `sphere`,
+`line`, and `cartoon` are supported display aliases. Calculations require
+an action in the editor.
+
+**Copy link** uses a source identifier when the fetched document is unchanged.
+Other molecules are included as a compressed CJSON snapshot. The generated
+source or snapshot stays in the URL fragment, which browsers omit from HTTP
+requests. When a snapshot exceeds 1 MiB expanded or would require a link longer
+than 8192 characters, **Copy link** downloads it as CJSON.
+
 ## Build an application with the WASM package
 
 The package contains the compiled Avogadro runtime and an example HTML/JavaScript
 interface. You can change the interface without rebuilding the WASM binary.
-Keep `avogadro-web.js`, `avogadro-web.wasm`, `qtloader.js`, and any `.data` or
-worker JavaScript files from the same package together. `build-manifest.json`
-identifies the source revisions and toolchain used to build that package.
+Keep the `core/` module, `avogadro-web.js`, `avogadro-web.wasm`, `qtloader.js`,
+and any `.data` or worker JavaScript files from the same package together.
+`build-manifest.json` identifies its build profile, source revisions, and toolchain.
 
 Import the reusable module at `core/avogadro-editor.js`. The full editor at
 `index.html` uses this same module and adds its own controls, styles, and
@@ -101,7 +137,8 @@ listed above, and a viewport with a nonzero width and height.
 ### Initialize a viewport
 
 Save the following three files at the root of the unpacked WASM package.
-Start the included server with `python3 serve-wasm.py` and open
+Start `python3 serve-wasm.py` for the multithreaded package or
+`python3 -m http.server --bind 127.0.0.1` for the single-threaded package and open
 `http://127.0.0.1:8000/viewer.html`. See the
 [self-hosting guide](docs/self-hosting.md) for other servers.
 
@@ -149,8 +186,10 @@ try {
 ```
 
 The factory checks browser support, initializes the Qt runtime, and handles
-viewport resizing and wheel zoom. Pass `{ wheelZoom: false }` to let users
-scroll the surrounding page while the pointer is over the viewport. The optional
+viewport resizing, wheel zoom and two-finger pan and zoom. Pass
+`{ touchZoom: false }` when the host handles touch gestures. With
+`{ wheelZoom: false }`, the wheel scrolls the surrounding page while the
+pointer is over the viewport. The optional
 second argument also accepts `onExit(details)`, `print(text)`, and `printErr(text)` callbacks. If you
 initialize Qt yourself, wrap the instance with
 `new AvogadroEditor(instance)` using the class exported by the core module.
@@ -162,6 +201,10 @@ The `AvogadroEditor` wrapper provides:
 - `loadMolecule(text, format)`, `exportMolecule(format = 'cjson')`, and
   `newMolecule()` for file content and documents. Export returns text; your
   application chooses how to download or store it.
+- `insertFragment(sdf)` appends one 3D SDF record and selects the inserted
+  atoms. It retains the current filename and groups the insertion into one
+  undo step. The HTTPS editor obtains this record through the approved
+  [PubChem structure lookup](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest-tutorial).
 - `setTool(id)` and `setDisplayStyle(id, enabled)` for editing and rendering.
   Discover available IDs from `state.tools` and `state.displayStyles`.
 - `setDrawOptions(options)` for element (`atomicNumber`), bond order,
@@ -189,3 +232,26 @@ and deployment instructions.
 
 To change the C++ controller or the plugins included in the WASM runtime, see
 [Building and testing](https://github.com/OpenChemistry/avogadro-web/blob/main/BUILDING.md).
+
+### Molecule actions
+
+The Tool inspector lists the actions reported by the current runtime. Embedders
+can read `editor.state.actions` and call `editor.runAction(id, options)` with
+an enabled ID. The property actions accept `{ index: 0 }`,
+`editUnitCell` accepts `{ vectors: [4,0,0, 0,5,0, 0,0,6] }`, and
+`buildSupercell` accepts `{ repeats: [2,1,1] }`. Each entry supplies a label, enabled state, optional
+argument name and a calculation flag. For example, `selectElement` accepts
+`{ element: 'O' }`. The controller validates options and availability again
+when dispatching. Calculations require a user action.
+
+| Menu | Web support |
+| --- | --- |
+| Hydrogens and bonds | Adjust hydrogens, remove extra/all hydrogens, perceive bonds and bond orders, connect selected atoms, remove bonds. These commands use the library plugins and their undo history. |
+| Insert | In the HTTPS editor, choose **Look up**, select **SMILES** or **InChI**, and check **Insert into the current molecule**. The request sends the identifier to PubChem. A matching PubChem 3D conformer is inserted as a disconnected fragment in one undo step. Molecules without a matching 3D record and explicit radical fragments produce an error. The offline package has no identifier resolver. |
+| Select | All, none, invert, element, water and residue name use the Select plugin. |
+| View | Center and align view to axes resets the viewport orientation and fits the molecule. Align picked atoms changes coordinates. |
+| Analysis | The Calculate inspector exposes surfaces, molecular orbitals and geometry optimization where supported. Energy and forces appear as threaded-kit actions. Inspect an atom or bond by zero-based index for element, formal charge, position, bond endpoints, order and length. Positions and lengths use ångströms. |
+| Crystal | Enter the three lattice vectors in ångströms to create or edit a right-handed unit cell while preserving Cartesian coordinates. Wrap, Niggli reduction and supercell construction require a regular cell. Supercells accept 1–32 integer copies along each axis, with limits of 100,000 atoms and 200,000 bonds. |
+
+The hydrogen, bonding and selection commands require the corresponding optional
+library plugins. Builds without them omit their commands from discovery.

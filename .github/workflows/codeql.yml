@@ -1,0 +1,84 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { language: actions, build-mode: none }
+          - { language: javascript-typescript, build-mode: none }
+          - { language: python, build-mode: none }
+          - { language: c-cpp, build-mode: manual }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout the pinned superbuild resource revisions
+        if: matrix.language == 'c-cpp'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: timvdm/openchemistry
+          ref: b563eb581623e0c3b16fe72ba33033a0441ba4d2
+          path: dependencies
+          persist-credentials: false
+      - name: Fetch the native installation resources
+        if: matrix.language == 'c-cpp'
+        working-directory: dependencies
+        run: git submodule update --init --depth 1 fragments molecules crystals
+      - if: matrix.language == 'c-cpp'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: timvdm/avogadrolibs
+          ref: c2ba2eb7dfa6abc67b1d19caeaf0d290db414896
+          path: dependencies/avogadrolibs
+          persist-credentials: false
+      - name: Read Qt version
+        if: matrix.language == 'c-cpp'
+        id: toolchain
+        run: jq -r '"qt=" + .qt' tools/wasm-toolchain.json >> "$GITHUB_OUTPUT"
+      - name: Install native Qt
+        if: matrix.language == 'c-cpp'
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: ${{ steps.toolchain.outputs.qt }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          archives: qtbase icu
+          cache: true
+      - name: Build C++ dependencies before tracing
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install libeigen3-dev libglew-dev libgtest-dev ninja-build libxkbcommon-dev
+          bash tools/ci-native.sh libraries
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Build the controller under CodeQL
+        if: matrix.language == 'c-cpp'
+        run: bash tools/ci-native.sh controller
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:${{ matrix.language }}

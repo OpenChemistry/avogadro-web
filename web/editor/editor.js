@@ -1,36 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause
 import { createAvogadroEditor } from './core/avogadro-editor.js';
+import { describeImport, fetchMolecule, fileFormat, maxImportBytes, prepareImport, supportsRemoteImport } from './molecule-import.js';
+import { createShareLink, decodeSnapshot, parseStartupLink } from './share-link.js';
 
 const $ = id => document.getElementById(id);
-const icons = {
-  new: '<path d="M12 5v14M5 12h14"/>',
-  open: '<path d="M3 7V5h7l2 3h9v12H3V7Zm0 3h18"/>',
-  undo: '<path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 6 6v3"/>',
-  redo: '<path d="m16 5 5 5-5 5m5-5H10a6 6 0 0 0-6 6v3"/>',
-  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
-  delete: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
-  fit: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/>',
-  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
-  close: '<path d="m6 6 12 12M6 18 18 6"/>',
-  shield: '<path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',
-  moon: '<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',
-  navigate: '<ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-35 12 12)"/><circle cx="12" cy="12" r="7"/>',
-  draw: '<path d="m4 16-1 5 5-1L21 7l-4-4L4 16Zm10-10 4 4M4 16l4 4"/>',
-  select: '<path d="m5 3 14 10-7 1-3 7L5 3Z"/>',
-  MeasureTool: '<path d="m3 16 13-13 5 5L8 21l-5-5Zm4-4 3 3m1-7 3 3m1-7 3 3"/>',
-  Manipulator: '<path d="M12 2v20M2 12h20m-13-7 3-3 3 3m-6 14 3 3 3-3M5 9l-3 3 3 3m14-6 3 3-3 3"/>',
-  AlignTool: '<path d="M4 3v18m0-9h17M8 6h9M8 18h5m4-9 4 3-4 3"/>',
-  BondCentric: '<circle cx="5" cy="17" r="3"/><circle cx="19" cy="7" r="3"/><path d="m8 15 8-6M4 7a8 8 0 0 1 9-4m-2-2 2 2-2 2m9 12a8 8 0 0 1-9 4"/>',
-  LabelEditor: '<path d="M4 5h16M12 5v15M8 20h8"/>',
-  AutoOpt: '<path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/>',
-};
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
-  svg.innerHTML = icons[name] || icons.panel;
+  const use = document.createElementNS(svg.namespaceURI, 'use');
+  const id = `icon-${name}`;
+  use.setAttribute('href', document.getElementById(id) ? `#${id}` : '#icon-panel');
+  svg.append(use);
   return svg;
 }
 document.querySelectorAll('[data-icon]').forEach(el => el.prepend(icon(el.dataset.icon)));
@@ -39,6 +21,8 @@ function setReady(ready) {
   runtimeReady = ready;
   $('controls').disabled = !ready;
   $('document-controls').disabled = !ready;
+  $('copy-link').hidden = !supportsRemoteImport(location);
+  $('copy-link').disabled = !ready;
   $('viewport').inert = !ready;
 }
 setReady(false);
@@ -58,14 +42,23 @@ $('theme').onclick = () => {
   try { localStorage.setItem('avogadro-theme', document.documentElement.dataset.theme); } catch {}
   applyTheme();
 };
+try {
+  document.documentElement.dataset.theme = localStorage.getItem('avogadro-theme') === 'light' ? 'light' : 'dark';
+} catch {}
 applyTheme();
 function showInspector(show) {
   document.body.classList.toggle('inspector-collapsed', !show);
   $('inspector-toggle').setAttribute('aria-expanded', String(show));
 }
-showInspector(!matchMedia('(max-width: 999px)').matches);
+const compactLayout = matchMedia('(max-width: 999px), (max-height: 500px) and (pointer: coarse)');
+showInspector(!compactLayout.matches);
+compactLayout.addEventListener('change', event => showInspector(!event.matches));
 $('inspector-toggle').onclick = () => showInspector(document.body.classList.contains('inspector-collapsed'));
 $('inspector-close').onclick = () => { showInspector(false); $('inspector-toggle').focus(); };
+const deviceInput = matchMedia('(pointer: coarse)');
+deviceInput.addEventListener('change', () => {
+  if (runtimeReady) render(editor.state);
+});
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function activateTab(tab) {
   for (const candidate of tabs) {
@@ -101,7 +94,7 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || $('discard-dialog').open) return;
   if (!$('export-menu').hidden) { closeExport(); $('export-toggle').focus(); }
-  else if (matchMedia('(max-width: 999px)').matches && !document.body.classList.contains('inspector-collapsed')) {
+  else if (compactLayout.matches && !document.body.classList.contains('inspector-collapsed')) {
     showInspector(false); $('inspector-toggle').focus();
   }
 });
@@ -111,6 +104,9 @@ $('element').value = '6';
 let editor;
 let filename = 'Untitled';
 let busy = false;
+let pendingImport;
+let provenance;
+const extraImportOrigins = (document.querySelector('meta[name="avogadro-import-origins"]')?.content ?? '').split(/\s+/);
 let pickedAtomIndex = -1;
 let pickedLabel;
 const message = (text, error = false) => { $('status').textContent = text; $('status').dataset.error = String(error); };
@@ -124,6 +120,11 @@ const toolHelp = {
   LabelEditor: 'Click an atom to edit its label.',
   Manipulator: 'Drag an atom to move it. Select several atoms first to move them together.',
   MeasureTool: 'Click up to four atoms to measure distances, angles, and dihedrals. Double-click to clear.',
+};
+
+const touchToolHelp = {
+  draw: 'Tap to add an atom · Drag to bond · Two fingers to pan or zoom',
+  navigate: 'Drag to rotate · Two fingers to pan or zoom',
 };
 
 const toolTooltip = document.createElement('div');
@@ -221,7 +222,7 @@ function renderCalculations(state) {
   $('viewport').inert = state.calculating || !runtimeReady;
   for (const id of ['element', 'bond', 'hydrogens', 'align', 'align-axis', 'atom-label']) $(id).disabled = working;
   $('label-options').querySelector('button').disabled = working;
-  for (const id of ['new', 'open', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
+  for (const id of ['new', 'open', 'lookup', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
   for (const button of $('tools').querySelectorAll('button')) button.disabled = working;
   $('undo').disabled ||= working;
   $('redo').disabled ||= working;
@@ -251,13 +252,60 @@ function renderCalculations(state) {
   }
 }
 
+function renderActions(actions) {
+  const select = $('molecule-action');
+  $('molecule-actions').hidden = !actions.length;
+  if (!actions.length) return;
+  if (select.options.length !== actions.length || actions.some((item, i) => select.options[i].value !== item.id)) {
+    const current = select.value;
+    select.replaceChildren(...actions.map(item => new Option(item.label, item.id)));
+    if (actions.some(item => item.id === current)) select.value = current;
+  }
+  for (const [i, item] of actions.entries()) select.options[i].disabled = !item.enabled;
+  const item = actions.find(item => item.id === select.value);
+  $('run-action').disabled = !item?.enabled;
+  $('action-argument-label').hidden = !item?.argument;
+  const labels = { element: 'Element symbol or number', residue: 'Residue name',
+    index: 'Zero-based index', vectors: 'Lattice vectors a, b, c (nine components in Å)',
+    repeats: 'Copies along a, b, c (three whole numbers)' };
+  $('action-argument-name').textContent = labels[item?.argument] || '';
+}
+$('molecule-action').onchange = () => {
+  const state = editor.state;
+  const { argument } = state.actions.find(item => item.id === $('molecule-action').value) || {};
+  const defaults = { index: '0', vectors: (state.cellVectors?.length ? state.cellVectors : [3,0,0,0,3,0,0,0,3]).join(' '), repeats: '2 1 1' };
+  $('action-argument').value = defaults[argument] || '';
+  $('action-result').textContent = '';
+  renderActions(state.actions);
+};
+$('run-action').onclick = () => action(() => {
+  const item = editor.state.actions.find(item => item.id === $('molecule-action').value);
+  if (!item?.enabled) return;
+  const text = $('action-argument').value.trim();
+  let value = text;
+  if (item.argument === 'index') value = text ? Number(text) : null;
+  if (item.argument === 'repeats' || item.argument === 'vectors')
+    value = text.split(/[\s,]+/).map(Number);
+  const result = editor.runAction(item.id, item.argument ? { [item.argument]: value } : {});
+  if (result.properties) {
+    const labels = { index: 'Index', atomicNumber: 'Atomic number', formalCharge: 'Formal charge',
+      positionAngstrom: 'Position (Å)', begin: 'First atom', end: 'Second atom', order: 'Bond order', lengthAngstrom: 'Length (Å)' };
+    $('action-result').textContent = Object.entries(result.properties).map(([key, value]) =>
+      `${labels[key] || key}: ${Array.isArray(value) ? value.join(', ') : value}`).join(' · ');
+  }
+  if (item.calculation) activateTab($('tab-calculations'));
+}, false);
+
 function render(state) {
+  renderActions(state.actions);
   $('document-name').textContent = `${filename}${state.modified ? ' *' : ''}`;
   $('document-state').textContent = state.modified ? 'Unsaved changes' : state.atomCount ? 'Molecule ready' : 'New molecule';
   $('document-state').classList.toggle('modified', state.modified);
+  $('copy-link').disabled = !runtimeReady || !state.atomCount || state.calculating;
   $('empty-state').hidden = state.atomCount !== 0;
   $('active-tool').textContent = state.tools.find(tool => tool.id === state.tool)?.label || 'Tool';
-  $('canvas-help').textContent = state.tool === 'draw' ? 'Click to add an atom · Drag to create a bond · Scroll to zoom' : (toolHelp[state.tool] || 'Drag to rotate · Scroll to zoom');
+  const mouseHelp = state.tool === 'draw' ? 'Click to add an atom · Drag to create a bond · Scroll to zoom' : (toolHelp[state.tool] || 'Drag to rotate · Scroll to zoom');
+  $('canvas-help').textContent = deviceInput.matches ? (touchToolHelp[state.tool] ?? 'Two fingers to pan or zoom') : mouseHelp;
   $('counts').textContent = `${state.atomCount} atoms · ${state.bondCount} bonds`;
   $('undo').disabled = !state.canUndo;
   $('redo').disabled = !state.canRedo;
@@ -299,36 +347,190 @@ async function action(fn, focus = true) {
   finally { busy = false; }
 }
 
+async function fingerprint(text) {
+  if (!globalThis.crypto?.subtle) return undefined;
+  try {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return new Uint8Array(hash).join(',');
+  } catch {
+    return undefined;
+  }
+}
+
+function recordProvenance(source, style) {
+  provenance = undefined;
+  if (!source) return;
+  try {
+    provenance = { source, style, fingerprint: fingerprint(editor.exportMolecule()) };
+  } catch {
+    // A molecule that cannot be exported has no shareable snapshot yet.
+  }
+}
+
+function installMolecule({ text, filename: name, format, source }) {
+  const result = editor.loadMolecule(text, format);
+  filename = name;
+  recordProvenance(source);
+  message(result.notice || 'Molecule opened.');
+}
+
+function cancelLookup() {
+  if (!pendingImport) return;
+  pendingImport.abort();
+  pendingImport = undefined;
+  $('cancel-lookup').hidden = true;
+  message('Lookup cancelled.');
+}
+
+async function importRemote(request, insert = false) {
+  cancelLookup();
+  const controller = new AbortController();
+  const { signal } = controller;
+  pendingImport = controller;
+  $('cancel-lookup').hidden = false;
+  message(`Fetching molecule from ${request.url.hostname}…`);
+  try {
+    const molecule = await fetchMolecule(request, signal);
+    if (signal.aborted || !runtimeReady) return;
+    let installed = false;
+    await action(async () => {
+      if (!insert && !(await confirmReplacement())) {
+        message('Lookup cancelled.');
+        return;
+      }
+      if (signal.aborted || !runtimeReady) return;
+      if (insert) {
+        editor.insertFragment(molecule.text);
+        message('Fragment inserted.');
+      } else {
+        installMolecule(molecule);
+      }
+      installed = true;
+    });
+    return installed;
+  } catch (error) {
+    if (!signal.aborted) message(error.message, true);
+  } finally {
+    if (pendingImport === controller) {
+      pendingImport = undefined;
+      $('cancel-lookup').hidden = true;
+    }
+  }
+}
+
+$('lookup').hidden = !supportsRemoteImport(location);
+$('lookup').onclick = () => {
+  if (busy) return;
+  cancelLookup();
+  $('lookup-kind').onchange();
+  $('lookup-dialog').showModal();
+  $('lookup-value').focus();
+};
+$('lookup-kind').onchange = () => {
+  $('lookup-error').hidden = true;
+  const canInsert = typeof editor?.instance.insertFragment === 'function' &&
+    ['smiles', 'inchi'].includes($('lookup-kind').value);
+  $('insert-fragment-label').hidden = !canInsert;
+  $('insert-fragment').checked = false;
+  $('lookup-privacy').textContent = describeImport($('lookup-kind').value);
+};
+$('lookup-kind').onchange();
+$('close-lookup').onclick = () => $('lookup-dialog').close();
+$('cancel-lookup').onclick = cancelLookup;
+$('lookup-form').onsubmit = event => {
+  event.preventDefault();
+  try {
+    const request = prepareImport({ kind: $('lookup-kind').value, value: $('lookup-value').value }, location, extraImportOrigins);
+    $('lookup-dialog').close();
+    $('lookup-error').hidden = true;
+    importRemote(request, !$('insert-fragment-label').hidden && $('insert-fragment').checked);
+  } catch (error) {
+    $('lookup-error').hidden = false;
+    $('lookup-error').textContent = error.message;
+  }
+};
+
 $('new').onclick = () => action(async () => {
-  if (await confirmReplacement()) { editor.newMolecule(); filename = 'Untitled'; message(''); }
+  cancelLookup();
+  if (await confirmReplacement()) {
+    editor.newMolecule();
+    filename = 'Untitled';
+    provenance = undefined;
+    message('');
+  }
 });
-$('open').onclick = () => $('file').click();
-$('file').onchange = () => action(async () => {
+$('open').onclick = () => {
+  cancelLookup();
+  $('file').click();
+};
+function openLocal(file) {
+  return action(async () => {
+    cancelLookup();
+    if (file.size > maxImportBytes) throw new Error('Molecule files are limited to 32 MiB.');
+    const format = fileFormat(file.name);
+    if (!format) throw new Error('Choose a molecule file with a supported file extension.');
+    // Confirm against the live document after the file has been read.
+    const text = await file.text();
+    if (await confirmReplacement()) installMolecule({ text, filename: file.name, format });
+  });
+}
+$('file').onchange = () => {
   const file = $('file').files[0];
   $('file').value = '';
-  if (!file) return;
-  // Read first, then confirm against the current document. Editing may have
-  // continued while the browser was reading the file.
-  const text = await file.text();
-  if (!(await confirmReplacement())) return;
-  const result = editor.loadMolecule(text, file.name.split('.').pop().toLowerCase());
-  filename = file.name;
-  message(result.notice || 'Molecule opened.');
+  if (file) openLocal(file);
+};
+window.addEventListener('dragover', event => {
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = runtimeReady && !busy && !editor.state.calculating && document.body.dataset.mode !== 'view' ? 'copy' : 'none';
 });
-$('download').onclick = () => action(() => {
-  const format = $('format').value;
-  closeExport();
-  const text = editor.exportMolecule(format);
+window.addEventListener('drop', event => {
+  const { files } = event.dataTransfer;
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  if (!runtimeReady || busy || editor.state.calculating || document.body.dataset.mode === 'view') return;
+  if (files.length === 1) openLocal(files[0]);
+  else message('Drop one molecule file at a time.', true);
+});
+function downloadMolecule(text, format) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
   link.href = url;
   link.download = `${filename.replace(/\.[^.]+$/, '')}.${format}`;
   document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('download').onclick = () => action(() => {
+  const format = $('format').value;
+  closeExport();
+  downloadMolecule(editor.exportMolecule(format), format);
   // Other exports may lose properties, so only CJSON clears the unsaved marker.
   if (format === 'cjson') editor.markSaved();
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
+$('copy-link').onclick = () => action(async () => {
+  const text = editor.exportMolecule();
+  const original = provenance;
+  let source;
+  if (original) {
+    const hash = await fingerprint(text);
+    if (hash && hash === await original.fingerprint) source = original.source;
+  }
+  const link = await createShareLink(location, document.body.dataset.mode, { source, style: original?.style, text });
+  if (!link) {
+    downloadMolecule(text, 'cjson');
+    message('The molecule does not fit in a link. CJSON download requested.');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(link);
+    message('Molecule link copied.');
+  } catch {
+    $('share-link-value').value = link;
+    $('copy-link-dialog').showModal();
+    $('share-link-value').select();
+  }
+}, false);
 $('optimize').onclick = () => action(() => editor.calculate('optimize', { method: $('force-field').value }), false);
 $('surface-type').onchange = () => renderCalculations(editor.state);
 $('render-surface').onclick = () => action(() => {
@@ -350,27 +552,78 @@ for (const id of ['element', 'bond', 'hydrogens']) $(id).onchange = () => action
 for (const [id, method] of [['undo', 'undo'], ['redo', 'redo'], ['delete', 'deleteSelection'], ['reset', 'resetCamera']]) $(id).onclick = () => action(() => editor[method]());
 $('viewport').addEventListener('contextmenu', event => event.preventDefault());
 $('viewport').addEventListener('keydown', event => {
-  if (busy || !editor || !runtimeReady || editor.state.calculating || editor.state.autoOptimizing || $('discard-dialog').open) return;
-  if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) {
-    event.preventDefault(); event.stopPropagation();
-    action(() => event.key.toLowerCase() === 'y' || event.shiftKey ? editor.redo() : editor.undo());
-  } else if (event.key === 'Delete' || event.key === 'Backspace') {
-    event.preventDefault(); event.stopPropagation(); action(() => editor.deleteSelection());
+  const history = (event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase());
+  const deletion = event.key === 'Delete' || event.key === 'Backspace';
+  if (!history && !deletion) return;
+  if (document.body.dataset.mode === 'view') {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
   }
+  if (busy || !editor || !runtimeReady || editor.state.calculating || editor.state.autoOptimizing || $('discard-dialog').open) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (history) action(() => event.key.toLowerCase() === 'y' || event.shiftKey ? editor.redo() : editor.undo());
+  else action(() => editor.deleteSelection());
 }, true);
+async function loadStartupLink() {
+  try {
+    const settings = parseStartupLink(location, editor.state);
+    if (!settings) return;
+    if (settings.source?.kind === 'cjson') {
+      let installed = false;
+      await action(async () => {
+        const text = await decodeSnapshot(settings.source.value);
+        if (!(await confirmReplacement()) || !runtimeReady) return;
+        installMolecule({ text, filename: 'Shared molecule.cjson', format: 'cjson' });
+        installed = true;
+      }, false);
+      if (!installed) return;
+    } else if (settings.source) {
+      const request = prepareImport(settings.source, location, extraImportOrigins);
+      const dialog = $('link-lookup-dialog');
+      $('link-lookup-privacy').textContent = request.source.kind === 'url'
+        ? `The editor will request this file from ${request.url.hostname}.`
+        : describeImport(request.source.kind);
+      dialog.returnValue = 'cancel';
+      const confirm = new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'fetch'), { once: true }));
+      dialog.showModal();
+      if (!(await confirm) || !(await importRemote(request))) return;
+    }
+    if (settings.style) {
+      for (const style of editor.state.displayStyles)
+        editor.setDisplayStyle(style.id, style.id === settings.style);
+      if (provenance) recordProvenance(provenance.source, settings.style);
+    }
+    if (settings.tool) editor.setTool(settings.tool);
+    if (settings.theme) {
+      document.documentElement.dataset.theme = settings.theme;
+      applyTheme();
+    }
+    document.body.dataset.mode = settings.mode;
+    render(editor.state);
+  } catch (error) {
+    message(error.message, true);
+  }
+}
+
 window.addEventListener('beforeunload', event => {
   if (editor?.state.modified) { event.preventDefault(); event.returnValue = ''; }
 });
 
 try {
   editor = await createAvogadroEditor($('viewport'), {
-    onExit: details => { setReady(false); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
+    onExit: details => { setReady(false); cancelLookup(); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
     print: text => console.info(text), printErr: text => console.error(text),
   });
   setupPlugins(editor.state);
-  editor.addEventListener('statechange', event => render(event.detail));
+  editor.addEventListener('statechange', event => {
+    $('action-result').textContent = '';
+    render(event.detail);
+  });
   $('loading').hidden = true; setReady(true); applyTheme();
   render(editor.state);
+  loadStartupLink();
   registerMoleculeTool().catch(error => console.warn('Unable to register the Avogadro WebMCP tool.', error));
 } catch (error) {
   console.error(error);

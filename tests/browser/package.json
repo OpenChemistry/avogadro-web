@@ -1,0 +1,7 @@
+{
+  "name": "avogadro-web-browser-tests",
+  "private": true,
+  "devDependencies": {
+    "puppeteer-core": "25.17.0"
+  }
+}
