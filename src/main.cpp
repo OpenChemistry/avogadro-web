@@ -103,6 +103,14 @@ void zoom(double delta)
 {
   controller->zoom(delta);
 }
+void pan(double x, double y)
+{
+  controller->pan(x, y);
+}
+void touchPointer(const std::string& phase, double x, double y, int modifiers)
+{
+  controller->touchPointer(QString::fromStdString(phase), x, y, modifiers);
+}
 bool setTheme(const std::string& theme)
 {
   return controller->setTheme(QString::fromStdString(theme));
@@ -134,6 +142,8 @@ EMSCRIPTEN_BINDINGS(avogadro_web)
   emscripten::function("resetCamera", &resetCamera);
   emscripten::function("setTheme", &setTheme);
   emscripten::function("zoom", &zoom);
+  emscripten::function("pan", &pan);
+  emscripten::function("touchPointer", &touchPointer);
   emscripten::function("markSaved", &markSaved);
 }
 #endif

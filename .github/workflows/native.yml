@@ -1,0 +1,95 @@
+name: Native controller
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: '18 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  controller:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CC: clang
+      CXX: clang++
+      CFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+      CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_MAXSIZE: 512M
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout the pinned superbuild resource revisions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: timvdm/openchemistry
+          ref: b563eb581623e0c3b16fe72ba33033a0441ba4d2
+          path: dependencies
+          persist-credentials: false
+      - name: Fetch the native installation resources
+        working-directory: dependencies
+        run: git submodule update --init --depth 1 fragments molecules crystals
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: timvdm/avogadrolibs
+          ref: 61ce6da07f2a125fae2a26180f9c8addad381672
+          path: dependencies/avogadrolibs
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/native-ccache
+          key: native-sanitized-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/native.yml', 'tools/ci-native.sh') }}-${{ github.sha }}
+          restore-keys: native-sanitized-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/native.yml', 'tools/ci-native.sh') }}-
+      - name: Read Qt version
+        id: toolchain
+        run: jq -r '"qt=" + .qt' tools/wasm-toolchain.json >> "$GITHUB_OUTPUT"
+      - name: Install native Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: ${{ steps.toolchain.outputs.qt }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          archives: qtbase icu
+          cache: true
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install ccache clang clang-tidy libeigen3-dev libglew-dev libgtest-dev ninja-build libxkbcommon-dev
+      - name: Build the web profile and controller
+        env:
+          ENABLE_ROUND_TRIP_FUZZER: 'ON'
+          CCACHE_DIR: ${{ runner.temp }}/native-ccache
+        run: |
+          bash tools/ci-native.sh libraries
+          bash tools/ci-native.sh controller
+      - name: Run sanitized native tests
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            export AVOGADRO_ROUND_TRIP_CASES=2048
+          fi
+          ctest --test-dir build-native --output-on-failure
+      - name: Run the bounded native round-trip fuzzer
+        env:
+          QT_QPA_PLATFORM: minimal
+        run: |
+          runs=64
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then runs=2048; fi
+          build-native/bin/AvogadroWebRoundTripFuzzer -runs="$runs" -max_len=4 \
+            -max_total_time=90 -seed=1729 -exact_artifact_path=/dev/null
+      - name: Analyze the controller and entry point
+        run: >
+          clang-tidy -p build-native -checks='-*,clang-analyzer-*'
+          --warnings-as-errors='*' src/main.cpp src/webcontroller.cpp tests/native/webcontroller.cpp
+          tests/native/roundtrips.cpp tests/native/roundtripproperties.cpp tests/native/roundtripfuzzer.cpp
