@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 import { createAvogadroEditor } from './core/avogadro-editor.js';
+import { describeImport, fetchMolecule, fileFormat, maxImportBytes, prepareImport, supportsRemoteImport } from './molecule-import.js';
+import { createShareLink, decodeSnapshot, parseStartupLink } from './share-link.js';
 
 const $ = id => document.getElementById(id);
 function icon(name) {
@@ -19,6 +21,8 @@ function setReady(ready) {
   runtimeReady = ready;
   $('controls').disabled = !ready;
   $('document-controls').disabled = !ready;
+  $('copy-link').hidden = !supportsRemoteImport(location);
+  $('copy-link').disabled = !ready;
   $('viewport').inert = !ready;
 }
 setReady(false);
@@ -94,6 +98,9 @@ $('element').value = '6';
 let editor;
 let filename = 'Untitled';
 let busy = false;
+let pendingImport;
+let provenance;
+const extraImportOrigins = (document.querySelector('meta[name="avogadro-import-origins"]')?.content ?? '').split(/\s+/);
 let pickedAtomIndex = -1;
 let pickedLabel;
 const message = (text, error = false) => { $('status').textContent = text; $('status').dataset.error = String(error); };
@@ -204,7 +211,7 @@ function renderCalculations(state) {
   $('viewport').inert = state.calculating || !runtimeReady;
   for (const id of ['element', 'bond', 'hydrogens', 'align', 'align-axis', 'atom-label']) $(id).disabled = working;
   $('label-options').querySelector('button').disabled = working;
-  for (const id of ['new', 'open', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
+  for (const id of ['new', 'open', 'lookup', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
   for (const button of $('tools').querySelectorAll('button')) button.disabled = working;
   $('undo').disabled ||= working;
   $('redo').disabled ||= working;
@@ -238,6 +245,7 @@ function render(state) {
   $('document-name').textContent = `${filename}${state.modified ? ' *' : ''}`;
   $('document-state').textContent = state.modified ? 'Unsaved changes' : state.atomCount ? 'Molecule ready' : 'New molecule';
   $('document-state').classList.toggle('modified', state.modified);
+  $('copy-link').disabled = !runtimeReady || !state.atomCount || state.calculating;
   $('empty-state').hidden = state.atomCount !== 0;
   $('active-tool').textContent = state.tools.find(tool => tool.id === state.tool)?.label || 'Tool';
   $('canvas-help').textContent = state.tool === 'draw' ? 'Click to add an atom · Drag to create a bond · Scroll to zoom' : (toolHelp[state.tool] || 'Drag to rotate · Scroll to zoom');
@@ -282,37 +290,180 @@ async function action(fn, focus = true) {
   finally { busy = false; }
 }
 
+async function fingerprint(text) {
+  if (!globalThis.crypto?.subtle) return undefined;
+  try {
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return new Uint8Array(hash).join(',');
+  } catch {
+    return undefined;
+  }
+}
+
+function recordProvenance(source, style) {
+  provenance = undefined;
+  if (!source) return;
+  try {
+    provenance = { source, style, fingerprint: fingerprint(editor.exportMolecule()) };
+  } catch {
+    // A molecule that cannot be exported has no shareable snapshot yet.
+  }
+}
+
+function installMolecule({ text, filename: name, format, source }) {
+  const result = editor.loadMolecule(text, format);
+  filename = name;
+  recordProvenance(source);
+  message(result.notice || 'Molecule opened.');
+}
+
+function cancelLookup() {
+  if (!pendingImport) return;
+  pendingImport.abort();
+  pendingImport = undefined;
+  $('cancel-lookup').hidden = true;
+  message('Lookup cancelled.');
+}
+
+async function importRemote(request) {
+  cancelLookup();
+  const controller = new AbortController();
+  const { signal } = controller;
+  pendingImport = controller;
+  $('cancel-lookup').hidden = false;
+  message(`Fetching molecule from ${request.url.hostname}…`);
+  try {
+    const molecule = await fetchMolecule(request, signal);
+    if (signal.aborted || !runtimeReady) return;
+    let installed = false;
+    await action(async () => {
+      if (!(await confirmReplacement())) {
+        message('Lookup cancelled.');
+        return;
+      }
+      if (signal.aborted || !runtimeReady) return;
+      installMolecule(molecule);
+      installed = true;
+    });
+    return installed;
+  } catch (error) {
+    if (!signal.aborted) message(error.message, true);
+  } finally {
+    if (pendingImport === controller) {
+      pendingImport = undefined;
+      $('cancel-lookup').hidden = true;
+    }
+  }
+}
+
+$('lookup').hidden = !supportsRemoteImport(location);
+$('lookup').onclick = () => {
+  if (busy) return;
+  cancelLookup();
+  $('lookup-dialog').showModal();
+  $('lookup-value').focus();
+};
+$('lookup-kind').onchange = () => {
+  $('lookup-error').hidden = true;
+  $('lookup-privacy').textContent = describeImport($('lookup-kind').value);
+};
+$('lookup-kind').onchange();
+$('close-lookup').onclick = () => $('lookup-dialog').close();
+$('cancel-lookup').onclick = cancelLookup;
+$('lookup-form').onsubmit = event => {
+  event.preventDefault();
+  try {
+    const request = prepareImport({ kind: $('lookup-kind').value, value: $('lookup-value').value }, location, extraImportOrigins);
+    $('lookup-dialog').close();
+    $('lookup-error').hidden = true;
+    importRemote(request);
+  } catch (error) {
+    $('lookup-error').hidden = false;
+    $('lookup-error').textContent = error.message;
+  }
+};
+
 $('new').onclick = () => action(async () => {
-  if (await confirmReplacement()) { editor.newMolecule(); filename = 'Untitled'; message(''); }
+  cancelLookup();
+  if (await confirmReplacement()) {
+    editor.newMolecule();
+    filename = 'Untitled';
+    provenance = undefined;
+    message('');
+  }
 });
-$('open').onclick = () => $('file').click();
-$('file').onchange = () => action(async () => {
+$('open').onclick = () => {
+  cancelLookup();
+  $('file').click();
+};
+function openLocal(file) {
+  return action(async () => {
+    cancelLookup();
+    if (file.size > maxImportBytes) throw new Error('Molecule files are limited to 32 MiB.');
+    const format = fileFormat(file.name);
+    if (!format) throw new Error('Choose a molecule file with a supported file extension.');
+    // Confirm against the live document after the file has been read.
+    const text = await file.text();
+    if (await confirmReplacement()) installMolecule({ text, filename: file.name, format });
+  });
+}
+$('file').onchange = () => {
   const file = $('file').files[0];
   $('file').value = '';
-  if (!file) return;
-  if (file.size > 32 * 1024 * 1024) throw new Error('The file exceeds the 32 MiB input limit.');
-  // Read first, then confirm against the current document. Editing may have
-  // continued while the browser was reading the file.
-  const text = await file.text();
-  if (!(await confirmReplacement())) return;
-  const result = editor.loadMolecule(text, file.name.split('.').pop().toLowerCase());
-  filename = file.name;
-  message(result.notice || 'Molecule opened.');
+  if (file) openLocal(file);
+};
+window.addEventListener('dragover', event => {
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = runtimeReady && !busy && !editor.state.calculating && document.body.dataset.mode !== 'view' ? 'copy' : 'none';
 });
-$('download').onclick = () => action(() => {
-  const format = $('format').value;
-  closeExport();
-  const text = editor.exportMolecule(format);
+window.addEventListener('drop', event => {
+  const { files } = event.dataTransfer;
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  if (!runtimeReady || busy || editor.state.calculating || document.body.dataset.mode === 'view') return;
+  if (files.length === 1) openLocal(files[0]);
+  else message('Drop one molecule file at a time.', true);
+});
+function downloadMolecule(text, format) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
   link.href = url;
   link.download = `${filename.replace(/\.[^.]+$/, '')}.${format}`;
   document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('download').onclick = () => action(() => {
+  const format = $('format').value;
+  closeExport();
+  downloadMolecule(editor.exportMolecule(format), format);
   // Other exports may lose properties, so only CJSON clears the unsaved marker.
   if (format === 'cjson') editor.markSaved();
   message(format === 'cjson' ? 'Download requested.' : 'Export requested. Use CJSON to preserve Avogadro data.');
 });
+$('copy-link').onclick = () => action(async () => {
+  const text = editor.exportMolecule();
+  const original = provenance;
+  let source;
+  if (original) {
+    const hash = await fingerprint(text);
+    if (hash && hash === await original.fingerprint) source = original.source;
+  }
+  const link = await createShareLink(location, document.body.dataset.mode, { source, style: original?.style, text });
+  if (!link) {
+    downloadMolecule(text, 'cjson');
+    message('The molecule does not fit in a link. CJSON download requested.');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(link);
+    message('Molecule link copied.');
+  } catch {
+    $('share-link-value').value = link;
+    $('copy-link-dialog').showModal();
+    $('share-link-value').select();
+  }
+}, false);
 $('optimize').onclick = () => action(() => editor.calculate('optimize', { method: $('force-field').value }), false);
 $('surface-type').onchange = () => renderCalculations(editor.state);
 $('render-surface').onclick = () => action(() => {
@@ -334,27 +485,75 @@ for (const id of ['element', 'bond', 'hydrogens']) $(id).onchange = () => action
 for (const [id, method] of [['undo', 'undo'], ['redo', 'redo'], ['delete', 'deleteSelection'], ['reset', 'resetCamera']]) $(id).onclick = () => action(() => editor[method]());
 $('viewport').addEventListener('contextmenu', event => event.preventDefault());
 $('viewport').addEventListener('keydown', event => {
-  if (busy || !editor || !runtimeReady || editor.state.calculating || editor.state.autoOptimizing || $('discard-dialog').open) return;
-  if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) {
-    event.preventDefault(); event.stopPropagation();
-    action(() => event.key.toLowerCase() === 'y' || event.shiftKey ? editor.redo() : editor.undo());
-  } else if (event.key === 'Delete' || event.key === 'Backspace') {
-    event.preventDefault(); event.stopPropagation(); action(() => editor.deleteSelection());
+  const history = (event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase());
+  const deletion = event.key === 'Delete' || event.key === 'Backspace';
+  if (!history && !deletion) return;
+  if (document.body.dataset.mode === 'view') {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
   }
+  if (busy || !editor || !runtimeReady || editor.state.calculating || editor.state.autoOptimizing || $('discard-dialog').open) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (history) action(() => event.key.toLowerCase() === 'y' || event.shiftKey ? editor.redo() : editor.undo());
+  else action(() => editor.deleteSelection());
 }, true);
+async function loadStartupLink() {
+  try {
+    const settings = parseStartupLink(location, editor.state);
+    if (!settings) return;
+    if (settings.source?.kind === 'cjson') {
+      let installed = false;
+      await action(async () => {
+        const text = await decodeSnapshot(settings.source.value);
+        if (!(await confirmReplacement()) || !runtimeReady) return;
+        installMolecule({ text, filename: 'Shared molecule.cjson', format: 'cjson' });
+        installed = true;
+      }, false);
+      if (!installed) return;
+    } else if (settings.source) {
+      const request = prepareImport(settings.source, location, extraImportOrigins);
+      const dialog = $('link-lookup-dialog');
+      $('link-lookup-privacy').textContent = request.source.kind === 'url'
+        ? `The editor will request this file from ${request.url.hostname}.`
+        : describeImport(request.source.kind);
+      dialog.returnValue = 'cancel';
+      const confirm = new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'fetch'), { once: true }));
+      dialog.showModal();
+      if (!(await confirm) || !(await importRemote(request))) return;
+    }
+    if (settings.style) {
+      for (const style of editor.state.displayStyles)
+        editor.setDisplayStyle(style.id, style.id === settings.style);
+      if (provenance) recordProvenance(provenance.source, settings.style);
+    }
+    if (settings.tool) editor.setTool(settings.tool);
+    if (settings.theme) {
+      document.documentElement.dataset.theme = settings.theme;
+      applyTheme();
+    }
+    document.body.dataset.mode = settings.mode;
+    render(editor.state);
+  } catch (error) {
+    message(error.message, true);
+  }
+}
+
 window.addEventListener('beforeunload', event => {
   if (editor?.state.modified) { event.preventDefault(); event.returnValue = ''; }
 });
 
 try {
   editor = await createAvogadroEditor($('viewport'), {
-    onExit: details => { setReady(false); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
+    onExit: details => { setReady(false); cancelLookup(); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
     print: text => console.info(text), printErr: text => console.error(text),
   });
   setupPlugins(editor.state);
   editor.addEventListener('statechange', event => render(event.detail));
   $('loading').hidden = true; setReady(true); applyTheme();
   render(editor.state);
+  loadStartupLink();
   registerMoleculeTool().catch(error => console.warn('Unable to register the Avogadro WebMCP tool.', error));
 } catch (error) {
   console.error(error);

@@ -18,7 +18,7 @@ threaded = args.kit == 'wasm_multithread'
 thread_feature = 'ON' if threaded else 'OFF'
 for project in (build, libs, app):
     cache = (project / 'CMakeCache.txt').read_text()
-    assert re.search(rf'^QT_FEATURE_thread:INTERNAL={thread_feature}$', cache, re.M), project
+    assert re.search(rf'^QT_FEATURE_thread:INTERNAL={thread_feature}$', cache, re.MULTILINE), project
 
 excluded = ['pythonscript.cpp', 'packagemanager.cpp', 'interfacescript.cpp',
             'interfacewidget.cpp', '/qtplugins/openbabel/', '/qtplugins/forcefield/obmmenergy.cpp',
@@ -48,6 +48,6 @@ for name in ['Avogadro::MoleQueue', 'Avogadro::OpenBabel', 'LibArchive']:
 for source in ['/avogadro/mainwindow.cpp', '/avogadro/rpc/', 'rpclistener.cpp']:
     assert source not in (app / 'build.ninja').read_text(), source
 for target in ['avogadroapp', 'libarchive', 'molequeue', 'jkqtplotter', 'qttesting']:
-    assert not re.search(rf'^build {target}:', (build / 'build.ninja').read_text(), re.M), target
+    assert not re.search(rf'^build {target}:', (build / 'build.ninja').read_text(), re.MULTILINE), target
 print(f'PASS ({args.kit}): expected Qt thread setting and plugins; '
       'no disabled sources, headers, exports, external projects or desktop RPC')

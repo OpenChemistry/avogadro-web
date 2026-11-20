@@ -15,6 +15,7 @@ if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
 option(ENABLE_TESTING "Build the web controller regression tests" OFF)
+option(ENABLE_ROUND_TRIP_FUZZER "Build the native Clang generated round-trip fuzzer" OFF)
 if(ENABLE_TESTING)
   enable_testing()
 endif()
@@ -43,7 +44,7 @@ if(EMSCRIPTEN)
   endif()
   set_target_properties(avogadro-web PROPERTIES QT_WASM_EXPORT_NAME createAvogadroWeb)
   # qt_add_executable deploys the loader and Emscripten auxiliary files.
-  foreach(asset index.html editor.js editor.css)
+  foreach(asset index.html editor.js editor.css molecule-import.js share-link.js)
     configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
   endforeach()
   foreach(asset_dir data icons)
@@ -76,6 +77,8 @@ if(EMSCRIPTEN)
       DEPENDS avogadro-web "${offline_generator}"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/index.html"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/molecule-import.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/share-link.js"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.css"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/icons/avogadro2.svg"
@@ -104,8 +107,23 @@ endif()
 if(ENABLE_TESTING AND NOT EMSCRIPTEN)
   find_package(GTest REQUIRED)
   find_package(Qt6 REQUIRED COMPONENTS Test)
-  add_executable(AvogadroWebTests tests/native/webcontroller.cpp)
+  add_executable(AvogadroWebTests tests/native/webcontroller.cpp
+    tests/native/roundtrips.cpp tests/native/roundtripproperties.cpp)
   target_link_libraries(AvogadroWebTests PRIVATE AvogadroWebController GTest::gtest Qt6::Test)
-  add_test(NAME WebEditor COMMAND AvogadroWebTests)
-  set_tests_properties(WebEditor PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  add_test(NAME WebEditor COMMAND AvogadroWebTests --gtest_filter=-GeneratedRoundTrips.*)
+  add_test(NAME WebEditorRoundTrips COMMAND AvogadroWebTests --gtest_filter=GeneratedRoundTrips.*)
+  set_tests_properties(WebEditor WebEditorRoundTrips PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  set_tests_properties(WebEditorRoundTrips PROPERTIES TIMEOUT 90)
+endif()
+
+if(ENABLE_ROUND_TRIP_FUZZER)
+  if(EMSCRIPTEN OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message(FATAL_ERROR "ENABLE_ROUND_TRIP_FUZZER requires native Clang with libFuzzer")
+  endif()
+  add_executable(AvogadroWebRoundTripFuzzer
+    tests/native/roundtripfuzzer.cpp tests/native/roundtripproperties.cpp)
+  target_link_libraries(AvogadroWebRoundTripFuzzer PRIVATE AvogadroWebController)
+  target_compile_options(AvogadroWebRoundTripFuzzer PRIVATE -fsanitize=fuzzer)
+  target_link_options(AvogadroWebRoundTripFuzzer PRIVATE -fsanitize=fuzzer)
 endif()
