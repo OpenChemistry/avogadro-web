@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 import { createAvogadroEditor } from './core/avogadro-editor.js';
+import { describeImport, fetchMolecule, fileFormat, maxImportBytes, prepareImport, supportsRemoteImport } from './molecule-import.js';
 
 const $ = id => document.getElementById(id);
 function icon(name) {
@@ -94,6 +95,8 @@ $('element').value = '6';
 let editor;
 let filename = 'Untitled';
 let busy = false;
+let pendingImport;
+const extraImportOrigins = (document.querySelector('meta[name="avogadro-import-origins"]')?.content ?? '').split(/\s+/);
 let pickedAtomIndex = -1;
 let pickedLabel;
 const message = (text, error = false) => { $('status').textContent = text; $('status').dataset.error = String(error); };
@@ -204,7 +207,7 @@ function renderCalculations(state) {
   $('viewport').inert = state.calculating || !runtimeReady;
   for (const id of ['element', 'bond', 'hydrogens', 'align', 'align-axis', 'atom-label']) $(id).disabled = working;
   $('label-options').querySelector('button').disabled = working;
-  for (const id of ['new', 'open', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
+  for (const id of ['new', 'open', 'lookup', 'download', 'export-toggle', 'delete']) $(id).disabled = working;
   for (const button of $('tools').querySelectorAll('button')) button.disabled = working;
   $('undo').disabled ||= working;
   $('redo').disabled ||= working;
@@ -282,22 +285,114 @@ async function action(fn, focus = true) {
   finally { busy = false; }
 }
 
+function installMolecule({ text, filename: name, format }) {
+  const result = editor.loadMolecule(text, format);
+  filename = name;
+  message(result.notice || 'Molecule opened.');
+}
+
+function cancelLookup() {
+  if (!pendingImport) return;
+  pendingImport.abort();
+  pendingImport = undefined;
+  $('cancel-lookup').hidden = true;
+  message('Lookup cancelled.');
+}
+
+async function importRemote(request) {
+  cancelLookup();
+  const controller = new AbortController();
+  const { signal } = controller;
+  pendingImport = controller;
+  $('cancel-lookup').hidden = false;
+  message(`Fetching molecule from ${request.url.hostname}…`);
+  try {
+    const molecule = await fetchMolecule(request, signal);
+    if (signal.aborted || !runtimeReady) return;
+    let installed = false;
+    await action(async () => {
+      if (!(await confirmReplacement())) {
+        message('Lookup cancelled.');
+        return;
+      }
+      if (signal.aborted || !runtimeReady) return;
+      installMolecule(molecule);
+      installed = true;
+    });
+    return installed;
+  } catch (error) {
+    if (!signal.aborted) message(error.message, true);
+  } finally {
+    if (pendingImport === controller) {
+      pendingImport = undefined;
+      $('cancel-lookup').hidden = true;
+    }
+  }
+}
+
+$('lookup').hidden = !supportsRemoteImport(location);
+$('lookup').onclick = () => {
+  if (busy) return;
+  cancelLookup();
+  $('lookup-dialog').showModal();
+  $('lookup-value').focus();
+};
+$('lookup-kind').onchange = () => {
+  $('lookup-error').hidden = true;
+  $('lookup-privacy').textContent = describeImport($('lookup-kind').value);
+};
+$('lookup-kind').onchange();
+$('close-lookup').onclick = () => $('lookup-dialog').close();
+$('cancel-lookup').onclick = cancelLookup;
+$('lookup-form').onsubmit = event => {
+  event.preventDefault();
+  try {
+    const request = prepareImport({ kind: $('lookup-kind').value, value: $('lookup-value').value }, location, extraImportOrigins);
+    $('lookup-dialog').close();
+    $('lookup-error').hidden = true;
+    importRemote(request);
+  } catch (error) {
+    $('lookup-error').hidden = false;
+    $('lookup-error').textContent = error.message;
+  }
+};
+
 $('new').onclick = () => action(async () => {
+  cancelLookup();
   if (await confirmReplacement()) { editor.newMolecule(); filename = 'Untitled'; message(''); }
 });
-$('open').onclick = () => $('file').click();
-$('file').onchange = () => action(async () => {
+$('open').onclick = () => {
+  cancelLookup();
+  $('file').click();
+};
+function openLocal(file) {
+  return action(async () => {
+    cancelLookup();
+    if (file.size > maxImportBytes) throw new Error('Molecule files are limited to 32 MiB.');
+    const format = fileFormat(file.name);
+    if (!format) throw new Error('Choose a molecule file with a supported file extension.');
+    // Confirm against the live document after the file has been read.
+    const text = await file.text();
+    if (await confirmReplacement()) installMolecule({ text, filename: file.name, format });
+  });
+}
+$('file').onchange = () => {
   const file = $('file').files[0];
   $('file').value = '';
-  if (!file) return;
-  if (file.size > 32 * 1024 * 1024) throw new Error('The file exceeds the 32 MiB input limit.');
-  // Read first, then confirm against the current document. Editing may have
-  // continued while the browser was reading the file.
-  const text = await file.text();
-  if (!(await confirmReplacement())) return;
-  const result = editor.loadMolecule(text, file.name.split('.').pop().toLowerCase());
-  filename = file.name;
-  message(result.notice || 'Molecule opened.');
+  if (file) openLocal(file);
+};
+window.addEventListener('dragover', event => {
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = runtimeReady && !busy && !editor.state.calculating ? 'copy' : 'none';
+});
+window.addEventListener('drop', event => {
+  const { files } = event.dataTransfer;
+  if (!event.dataTransfer.types.includes('Files')) return;
+  event.preventDefault();
+  if (!runtimeReady || busy || editor.state.calculating) return;
+  if (files.length === 1) openLocal(files[0]);
+  else message('Drop one molecule file at a time.', true);
 });
 $('download').onclick = () => action(() => {
   const format = $('format').value;
@@ -348,7 +443,7 @@ window.addEventListener('beforeunload', event => {
 
 try {
   editor = await createAvogadroEditor($('viewport'), {
-    onExit: details => { setReady(false); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
+    onExit: details => { setReady(false); cancelLookup(); closeExport(); message(`Avogadro stopped: ${details.text || details.code || 'runtime exited'}`, true); },
     print: text => console.info(text), printErr: text => console.error(text),
   });
   setupPlugins(editor.state);

@@ -65,7 +65,16 @@ Licorice, Van der Waals, and Labels on the active layer. CJSON saves the enabled
 styles per layer. If a file has no enabled style available in the web build,
 the editor enables Ball and Stick. It also enables Crystal Lattice when the
 molecule has a unit cell and Cartoons when it has residues. Open accepts PDB
-files for proteins and nucleic acids.
+files for proteins and nucleic acids. You can also drop a single local file
+onto the workspace.
+
+In the HTTPS editor, **Look up** sends a chemical name, CID, or SMILES to
+PubChem and imports its 3D record when available. A PDB ID is sent to RCSB PDB.
+HTTPS URL import supports the editor origin and the approved origins described
+in [the hosting guide](docs/self-hosting.md). Remote files share the 32 MiB
+limit and replacing an unsaved molecule requires confirmation. You can cancel
+a lookup while the download is pending. The standalone file has local import
+and drag-and-drop.
 
 With the multithreaded Qt WASM build, **Calculations** offers Optimize
 Geometry with UFF or Lennard-Jones, three molecular surfaces, and orbital

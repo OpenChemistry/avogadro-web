@@ -47,3 +47,13 @@ site behind Cloudflare, which adds the isolation headers.
 The editor includes a static CSP. Hosting headers can further restrict it.
 The [security policy](https://github.com/OpenChemistry/avogadro-web/blob/main/SECURITY.md)
 documents the Qt stylesheet hash, remote import origins and embedding policy.
+
+### Remote molecule import
+
+Enable HTTPS to offer **Look up** in the editor. The built-in allowlist
+permits the editor's own HTTPS origin, PubChem and RCSB PDB. To add another
+origin, add `<meta name="avogadro-import-origins" content="https://files.example.org">`
+to the hosted editor and list the same origin in `connect-src` in the HTML
+and any server-supplied CSP. List multiple origins separated by whitespace.
+Cross-origin file servers must grant the editor CORS access. Import requests
+omit credentials and the referrer, and the browser refuses redirects.
