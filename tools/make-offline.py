@@ -18,12 +18,17 @@ def bundle(directory):
     html = (directory / "index.html").read_text(encoding="utf-8")
     core = (directory / "core/avogadro-editor.js").read_bytes()
 
-    # Both modules ship in one script so file: needs no module fetch.
+    # The modules ship in one script so file: needs no module fetch.
     editor = (directory / "editor.js").read_bytes()
-    core_import = b"import { createAvogadroEditor } from './core/avogadro-editor.js';"
-    if editor.count(core_import) != 1:
-        raise ValueError("Expected one core module import in editor.js")
-    editor = editor.replace(core_import, core)
+    for specifier, source in (
+        (b"./core/avogadro-editor.js", core),
+        (b"./molecule-import.js", (directory / "molecule-import.js").read_bytes()),
+        (b"./share-link.js", (directory / "share-link.js").read_bytes()),
+    ):
+        pattern = rb"^import \{[^\n]+\} from '" + re.escape(specifier) + rb"';$"
+        editor, count = re.subn(pattern, lambda match: source, editor, flags=re.MULTILINE)
+        if count != 1:
+            raise ValueError(f"Expected one editor import of {specifier.decode('ascii')}")
     runtime = (directory / "avogadro-web.js").read_bytes()
     # Supply the embedded WASM to Emscripten before Qt starts, avoiding a file URL fetch.
     runtime += b"""

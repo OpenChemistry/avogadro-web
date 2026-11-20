@@ -826,3 +826,31 @@ body.inspector-collapsed #inspector {
 }
 
 .icon-definitions { position: absolute; }
+
+#lookup-form {
+  flex-direction: column;
+}
+#lookup-form p {
+  margin: 4px 0;
+}
+#lookup-error {
+  color: var(--danger);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#copy-link-dialog form {
+  margin-top: 12px;
+}
+body[data-mode="view"] .tool-rail,
+body[data-mode="view"] #inspector,
+body[data-mode="view"] #inspector-toggle,
+body[data-mode="view"] #document-controls {
+  display: none;
+}
+body[data-mode="view"] main {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -43,7 +43,7 @@ if(EMSCRIPTEN)
   endif()
   set_target_properties(avogadro-web PROPERTIES QT_WASM_EXPORT_NAME createAvogadroWeb)
   # qt_add_executable deploys the loader and Emscripten auxiliary files.
-  foreach(asset index.html editor.js editor.css)
+  foreach(asset index.html editor.js editor.css molecule-import.js share-link.js)
     configure_file("web/editor/${asset}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${asset}" COPYONLY)
   endforeach()
   foreach(asset_dir data icons)
@@ -76,6 +76,8 @@ if(EMSCRIPTEN)
       DEPENDS avogadro-web "${offline_generator}"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/index.html"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/molecule-import.js"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/share-link.js"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/editor.css"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/core/avogadro-editor.js"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/icons/avogadro2.svg"
