@@ -27,24 +27,26 @@ color switching. Theme changes never enter molecular undo history.
 
 ## Get started
 
-1. [Download the WASM package](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip).
-   This is a development build. See the [download page](https://github.com/OpenChemistry/avogadro-web/releases/tag/continuous)
+1. Choose a development build.
+   - [Multithreaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm.zip)
+     includes geometry optimization, Auto Optimize, and surface and orbital calculations.
+   - [Single-threaded ZIP](https://github.com/OpenChemistry/avogadro-web/releases/download/continuous/avogadro-web-wasm-singlethread.zip)
+     opens directly from disk and supports viewing and editing in cross-origin iframes.
+     The worker-based calculations listed above are unavailable in this build.
+
+   See the [download page](https://github.com/OpenChemistry/avogadro-web/releases/tag/continuous)
    for availability and version details.
-2. Extract the ZIP. Keep all files together and open a terminal in the directory
-   containing `index.html` and `serve-wasm.py`.
-3. Start the bundled server with Python 3:
+2. Extract the ZIP.
+   - **Single-threaded**. Double-click `avogadro-offline.html`. You can move
+     this file on its own and open it without a server or internet connection.
+   - **Multithreaded**. Open a terminal in the extracted folder, run
+     `python3 serve-wasm.py`, and open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+     Press Ctrl+C in the terminal to stop the server.
 
-   ```sh
-   python3 serve-wasm.py
-   ```
-
-4. Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in a desktop browser.
-   Press Ctrl+C in the terminal to stop the server.
-
-You need Python 3 and a browser with WebAssembly, WebGL 2, and SharedArrayBuffer
-support. Enable hardware acceleration if WebGL 2 is unavailable. Open the editor
-through the server; double-clicking `index.html` will not work. The bundled
-server listens only on your computer and supplies the headers the runtime needs.
+Both builds need a browser with WebAssembly and WebGL 2. The multithreaded
+build also needs SharedArrayBuffer, which the bundled server enables on
+loopback by sending cross-origin isolation headers. Enable hardware
+acceleration if WebGL 2 is unavailable.
 
 ## Using the editor
 
@@ -89,9 +91,9 @@ runs in the tab and leaves the editor's undo stack and unsaved status intact.
 
 The package contains the compiled Avogadro runtime and an example HTML/JavaScript
 interface. You can change the interface without rebuilding the WASM binary.
-Keep `avogadro-web.js`, `avogadro-web.wasm`, `qtloader.js`, and any `.data` or
-worker JavaScript files from the same package together. `build-manifest.json`
-identifies the source revisions and toolchain used to build that package.
+Keep the `core/` module, `avogadro-web.js`, `avogadro-web.wasm`, `qtloader.js`,
+and any `.data` or worker JavaScript files from the same package together.
+`build-manifest.json` identifies its build profile, source revisions, and toolchain.
 
 Import the reusable module at `core/avogadro-editor.js`. The full editor at
 `index.html` uses this same module and adds its own controls, styles, and
@@ -101,7 +103,8 @@ listed above, and a viewport with a nonzero width and height.
 ### Initialize a viewport
 
 Save the following three files at the root of the unpacked WASM package.
-Start the included server with `python3 serve-wasm.py` and open
+Start `python3 serve-wasm.py` for the multithreaded package or
+`python3 -m http.server --bind 127.0.0.1` for the single-threaded package and open
 `http://127.0.0.1:8000/viewer.html`. See the
 [self-hosting guide](docs/self-hosting.md) for other servers.
 
