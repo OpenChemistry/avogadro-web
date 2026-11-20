@@ -48,6 +48,10 @@ node avogadro-web/tests/browser/browser-smoke.mjs http://127.0.0.1:8000 evidence
 ```
 
 
+Pass `--single-threaded` to the hosted single-threaded Chrome smoke test to
+verify that the editor hides unavailable calculation controls. The offline test
+checks this automatically.
+
 To include calculation checks in the multithreaded Chrome run, set
 `AVOGADRO_FCHK_FIXTURE` to the absolute path of
 `avogadrodata/data/fchk/h2o-restricted.fchk` in the superbuild checkout.
@@ -157,3 +161,8 @@ is a candidate for a second adapter with its own WASM module. Keep the worker
 interfaces toolkit-specific until two implementations show what they share.
 
 See the [integration examples plan](examples/README.md) for host applications.
+
+Run `python3 tests/check-page-security.py` to check the shipped page and its
+JavaScript for forbidden DOM sinks and inline handlers. The Chromium smoke test
+records CSP violations from the first navigation through document editing. Run
+it against both served kits and the standalone single-threaded HTML file.

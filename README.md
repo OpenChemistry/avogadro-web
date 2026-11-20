@@ -2,7 +2,7 @@
 
 Draw, edit, and visualize molecules in a desktop browser with Avogadro's
 WebAssembly (WASM) build. Open molecular files, optimize geometry, and display
-molecular surfaces and orbitals. Files are processed in your browser.
+molecular surfaces and orbitals. Files are processed in your browser. The editor accepts files up to 32 MiB.
 
 Use the included editor, or build your own interface around the same molecular
 rendering and editing runtime.

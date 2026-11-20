@@ -2,35 +2,15 @@
 import { createAvogadroEditor } from './core/avogadro-editor.js';
 
 const $ = id => document.getElementById(id);
-const icons = {
-  new: '<path d="M12 5v14M5 12h14"/>',
-  open: '<path d="M3 7V5h7l2 3h9v12H3V7Zm0 3h18"/>',
-  undo: '<path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 6 6v3"/>',
-  redo: '<path d="m16 5 5 5-5 5m5-5H10a6 6 0 0 0-6 6v3"/>',
-  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
-  delete: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
-  fit: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/>',
-  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
-  close: '<path d="m6 6 12 12M6 18 18 6"/>',
-  shield: '<path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',
-  moon: '<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',
-  navigate: '<ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-35 12 12)"/><circle cx="12" cy="12" r="7"/>',
-  draw: '<path d="m4 16-1 5 5-1L21 7l-4-4L4 16Zm10-10 4 4M4 16l4 4"/>',
-  select: '<path d="m5 3 14 10-7 1-3 7L5 3Z"/>',
-  MeasureTool: '<path d="m3 16 13-13 5 5L8 21l-5-5Zm4-4 3 3m1-7 3 3m1-7 3 3"/>',
-  Manipulator: '<path d="M12 2v20M2 12h20m-13-7 3-3 3 3m-6 14 3 3 3-3M5 9l-3 3 3 3m14-6 3 3-3 3"/>',
-  AlignTool: '<path d="M4 3v18m0-9h17M8 6h9M8 18h5m4-9 4 3-4 3"/>',
-  BondCentric: '<circle cx="5" cy="17" r="3"/><circle cx="19" cy="7" r="3"/><path d="m8 15 8-6M4 7a8 8 0 0 1 9-4m-2-2 2 2-2 2m9 12a8 8 0 0 1-9 4"/>',
-  LabelEditor: '<path d="M4 5h16M12 5v15M8 20h8"/>',
-  AutoOpt: '<path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/>',
-};
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
-  svg.innerHTML = icons[name] || icons.panel;
+  const use = document.createElementNS(svg.namespaceURI, 'use');
+  const id = `icon-${name}`;
+  use.setAttribute('href', document.getElementById(id) ? `#${id}` : '#icon-panel');
+  svg.append(use);
   return svg;
 }
 document.querySelectorAll('[data-icon]').forEach(el => el.prepend(icon(el.dataset.icon)));
@@ -58,6 +38,9 @@ $('theme').onclick = () => {
   try { localStorage.setItem('avogadro-theme', document.documentElement.dataset.theme); } catch {}
   applyTheme();
 };
+try {
+  document.documentElement.dataset.theme = localStorage.getItem('avogadro-theme') === 'light' ? 'light' : 'dark';
+} catch {}
 applyTheme();
 function showInspector(show) {
   document.body.classList.toggle('inspector-collapsed', !show);
@@ -307,6 +290,7 @@ $('file').onchange = () => action(async () => {
   const file = $('file').files[0];
   $('file').value = '';
   if (!file) return;
+  if (file.size > 32 * 1024 * 1024) throw new Error('The file exceeds the 32 MiB input limit.');
   // Read first, then confirm against the current document. Editing may have
   // continued while the browser was reading the file.
   const text = await file.text();

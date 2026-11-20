@@ -43,3 +43,7 @@ or `python3 -m http.server --bind 127.0.0.1` for the single-threaded build.
 
 The multithreaded editor is hosted at <https://web.avogadro.cc/>, a GitHub Pages
 site behind Cloudflare, which adds the isolation headers.
+
+The editor includes a static CSP. Hosting headers can further restrict it.
+The [security policy](https://github.com/OpenChemistry/avogadro-web/blob/main/SECURITY.md)
+documents the Qt stylesheet hash, remote import origins and embedding policy.

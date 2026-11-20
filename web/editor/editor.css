@@ -824,3 +824,5 @@ body.inspector-collapsed #inspector {
   box-shadow: var(--shadow);
   font-size: 12px;
 }
+
+.icon-definitions { position: absolute; }

@@ -5,6 +5,8 @@
 import argparse
 import base64
 import gzip
+import hashlib
+import re
 from pathlib import Path
 
 
@@ -16,12 +18,12 @@ def bundle(directory):
     html = (directory / "index.html").read_text(encoding="utf-8")
     core = (directory / "core/avogadro-editor.js").read_bytes()
 
-    core_url = data_url("text/javascript", core)
+    # Both modules ship in one script so file: needs no module fetch.
     editor = (directory / "editor.js").read_bytes()
-    core_specifier = b"'./core/avogadro-editor.js'"
-    if core_specifier not in editor:
-        raise ValueError("Expected the core module reference in editor.js")
-    editor = editor.replace(core_specifier, f"'{core_url}'".encode("ascii"))
+    core_import = b"import { createAvogadroEditor } from './core/avogadro-editor.js';"
+    if editor.count(core_import) != 1:
+        raise ValueError("Expected one core module import in editor.js")
+    editor = editor.replace(core_import, core)
     runtime = (directory / "avogadro-web.js").read_bytes()
     # Supply the embedded WASM to Emscripten before Qt starts, avoiding a file URL fetch.
     runtime += b"""
@@ -39,19 +41,49 @@ def bundle(directory):
 """
     wasm = (directory / "avogadro-web.wasm").read_bytes()
     payload = base64.b64encode(gzip.compress(wasm, mtime=0)).decode("ascii")
-    css = data_url("text/css", (directory / "editor.css").read_bytes())
+    css = (directory / "editor.css").read_bytes()
     logo = data_url("image/svg+xml", (directory / "icons/avogadro2.svg").read_bytes())
-    qtloader = data_url("text/javascript", (directory / "qtloader.js").read_bytes())
+    qtloader = (directory / "qtloader.js").read_bytes()
+
+    def inline(source, tag):
+        text = source.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        if f"</{tag}" in text.lower():
+            raise ValueError(f"Unexpected closing {tag} tag in bundled source")
+        return text
+
+    def csp_hash(source):
+        digest = hashlib.sha256(source.encode("utf-8")).digest()
+        return "'sha256-" + base64.b64encode(digest).decode("ascii") + "'"
+
+    runtime, qtloader, editor = (inline(script, "script") for script in (runtime, qtloader, editor))
+    css = inline(css, "style")
+    scripts = " ".join(csp_hash(script) for script in (runtime, qtloader, editor))
+    # Retain the pinned Qt viewport stylesheet allowed by the hosted editor.
+    qt_style = re.search(r"style-src 'self' ('sha256-[A-Za-z0-9+/=]+');", html)
+    if not qt_style:
+        raise ValueError("Expected the Qt viewport stylesheet hash in index.html")
+    policy = (
+        f"default-src 'none'; script-src {scripts} 'wasm-unsafe-eval'; "
+        f"style-src {csp_hash(css)} {qt_style[1]}; img-src data: blob:; "
+        "connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'"
+    )
+    html, count = re.subn(
+        r'(<meta http-equiv="Content-Security-Policy" content=")[^"]+(")',
+        lambda match: match[1] + policy + match[2],
+        html,
+    )
+    if count != 1:
+        raise ValueError("Expected one Content-Security-Policy in index.html")
     replacements = {
-        'href="editor.css"': f'href="{css}"',
+        '<link rel="stylesheet" href="editor.css" />': f"<style>{css}</style>",
         'src="icons/avogadro2.svg"': f'src="{logo}"',
         'class="brand" href="./"': 'class="brand" href=""',
         '<script src="avogadro-web.js"></script>': (
             f'<script type="application/octet-stream" id="avogadro-wasm">{payload}</script>\n'
-            f'    <script src="{data_url("text/javascript", runtime)}"></script>'
+            f"    <script>{runtime}</script>"
         ),
-        'src="qtloader.js"': f'src="{qtloader}"',
-        'src="editor.js"': f'src="{data_url("text/javascript", editor)}"',
+        '<script src="qtloader.js"></script>': f"<script>{qtloader}</script>",
+        '<script type="module" src="editor.js"></script>': f'<script type="module">{editor}</script>',
     }
     for original, replacement in replacements.items():
         if html.count(original) != 1:

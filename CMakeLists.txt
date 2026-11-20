@@ -37,7 +37,7 @@ qt_add_executable(avogadro-web src/main.cpp)
 target_link_libraries(avogadro-web PRIVATE AvogadroWebController)
 
 if(EMSCRIPTEN)
-  target_link_options(avogadro-web PRIVATE --bind -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
+  target_link_options(avogadro-web PRIVATE --bind -sDYNAMIC_EXECUTION=0 -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
   if(ENABLE_TESTING)
     target_compile_definitions(avogadro-web PRIVATE AVOGADRO_WASM_BROWSER_TESTS)
   endif()
